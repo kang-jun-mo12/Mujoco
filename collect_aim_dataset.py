@@ -372,6 +372,7 @@ def main():
     with output_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
+        f.flush()
 
         for x in x_values:
             for y in y_values:
@@ -388,7 +389,7 @@ def main():
                 )
                 positions_done += 1
                 if hit_yaw is None:
-                    print(f"miss label: target=({x:.2f}, {y:.2f}, {args.target_z:.2f})")
+                    print(f"miss label: target=({x:.2f}, {y:.2f}, {args.target_z:.2f})", flush=True)
                     continue
 
                 for yaw_offset in yaw_offsets:
@@ -401,12 +402,14 @@ def main():
                         writer.writerow(make_row(target_pos, current_yaw, current_pitch, hit_yaw, hit_pitch, hit_time, detection))
                         rows_written += 1
 
+                f.flush()
                 print(
                     f"target=({x:.2f}, {y:.2f}) hit yaw={math.degrees(hit_yaw):+.2f} "
-                    f"pitch={math.degrees(hit_pitch):+.2f} rows={rows_written}"
+                    f"pitch={math.degrees(hit_pitch):+.2f} rows={rows_written}",
+                    flush=True,
                 )
 
-    print(f"done: wrote {rows_written} rows to {output_path}")
+    print(f"done: wrote {rows_written} rows to {output_path}", flush=True)
 
 
 if __name__ == "__main__":
