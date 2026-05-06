@@ -1,6 +1,7 @@
 # MuJoCo Rubber Band Launcher
 
 MuJoCo conference-room simulation with a two-axis rubber band launcher, an aim camera, and a movable target.
+The aim camera can run a trained YOLO ONNX target detector on rendered MuJoCo frames.
 
 ## Run
 
@@ -31,3 +32,4 @@ Use the OpenCV `Controls` window for keyboard input.
 - `rubber_band_launcher.xml`: standalone launcher model
 - `test.py`: standalone launcher simulation
 - `progress_summary.md`: detailed project notes
+- `yolo_model/target_yolo11s_640_best.onnx`: target detector used by the aim camera

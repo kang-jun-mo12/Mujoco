@@ -31,7 +31,7 @@ matplotlib>=3.7.0
   - 현재 주 실행 대상입니다.
 - `view_world.py`
   - 회의실 월드를 실행하는 Python 스크립트입니다.
-  - 키 입력, 발사, 조준 카메라, viewer 카메라 이동, 타겟 이동, 고무줄 튕김 제어를 담당합니다.
+  - 키 입력, 발사, 조준 카메라, YOLO 추론, viewer 카메라 이동, 타겟 이동, 고무줄 튕김 제어를 담당합니다.
 - `rubber_band_launcher.xml`
   - 기존 단독 launcher 모델입니다.
 - `test.py`
@@ -39,6 +39,9 @@ matplotlib>=3.7.0
   - 조작 방식과 튕김 제어는 `view_world.py`와 같은 방향으로 유지됩니다.
 - `progress_summary.md`
   - 현재 프로젝트 구조와 구현 내용을 설명하는 문서입니다.
+- `yolo_model/`
+  - 리얼월드 데이터로 학습한 타겟 YOLO 모델 패키지입니다.
+  - MuJoCo Aim Camera 프레임에서 `target`을 검출하는 데 사용합니다.
 
 ## 실행 방법
 
@@ -291,6 +294,64 @@ BLOOM_THRESHOLD = 210
 
 후처리는 원본 웹캠 같은 차가운 색감, 약한 bloom, 약한 blur를 만들기 위한 것입니다.
 
+## YOLO 타겟 추론
+
+리얼월드에서 수집한 데이터로 학습된 YOLO 모델을 MuJoCo Aim Camera 프레임에 적용합니다.  
+압축 패키지는 `mujoco_yolo_inference_package.zip`으로 들어왔고, 현재 필요한 파일은 `yolo_model/` 폴더에 풀어두었습니다.
+
+사용 파일:
+
+- `yolo_model/target_yolo11s_640_best.onnx`
+- `yolo_model/classes.txt`
+- `yolo_model/data.yaml`
+
+`target_yolo11s_640_best.pt`도 패키지 안에 있었지만, 현재 실행 코드는 추가 의존성을 줄이기 위해 OpenCV DNN으로 ONNX 모델을 사용합니다. `.pt` 파일과 원본 zip은 Git 추적에서 제외합니다.
+
+모델 정보:
+
+```text
+input size: 640
+camera frame: 640 x 480
+output shape: (1, 5, 8400)
+class: target
+```
+
+관련 설정:
+
+```python
+YOLO_MODEL_PATH = "yolo_model/target_yolo11s_640_best.onnx"
+YOLO_CLASSES_PATH = "yolo_model/classes.txt"
+YOLO_INPUT_SIZE = 640
+YOLO_CONF_THRESHOLD = 0.25
+YOLO_NMS_THRESHOLD = 0.45
+YOLO_INFER_EVERY_N_FRAMES = 3
+```
+
+추론 방식:
+
+1. Aim Camera 렌더 프레임을 OpenCV BGR 이미지로 변환합니다.
+2. 기존 웹캠 톤 후처리를 적용합니다.
+3. YOLO 입력 크기 `640 x 640`으로 letterbox 전처리합니다.
+4. OpenCV DNN으로 ONNX 모델을 forward합니다.
+5. `x, y, w, h, confidence` 출력값을 원본 `640 x 480` 좌표로 되돌립니다.
+6. NMS 후 가장 높은 confidence의 target 중심점과 화면 중심 오차를 계산합니다.
+
+Aim Camera 창에는 다음 overlay가 표시됩니다.
+
+- 검출 bounding box
+- 클래스 이름과 confidence
+- 화면 중심 crosshair
+- target 중심점
+- 화면 중심에서 target 중심까지의 오차 `dx`, `dy`
+
+`Controls` 창에도 YOLO 상태가 표시됩니다.
+
+```text
+YOLO:  1 target dx +12 dy -8
+```
+
+Aim Camera가 꺼져 있을 때는 YOLO 추론도 쉬고, `P`로 Aim Camera를 켰을 때 renderer와 모델을 지연 생성합니다.
+
 ## 고무줄 발사 구조
 
 고무줄은 `rubber_projectile` body입니다.
@@ -352,6 +413,7 @@ FIRST_BOUNCE_ANGULAR_SCALE = 0.25
 - 키 입력 처리
 - yaw/pitch/view 좌표/target 좌표/fire_count 표시
 - `P` 상태에 따라 Aim Camera 렌더링
+- Aim Camera 프레임에 YOLO target detector 적용
 - Aim Camera HUD 오버레이 표시
 
 ### MuJoCo 메인 루프
@@ -379,6 +441,7 @@ FIRST_BOUNCE_ANGULAR_SCALE = 0.25
 - 테이블 상판은 평평한 단일 geom
 - 타겟 오브젝트는 실제 규격 기반의 mocap body로 구현됨
 - 타겟 이동은 `F/H`로 좌우, `T/G`로 launcher-스크린 방향 이동
+- YOLO ONNX 모델은 OpenCV DNN으로 로드됨
 - trigger 관련 조인트/액추에이터 없음
 - OpenCV `Controls` 창에서 모든 프로젝트 키 입력 처리
 

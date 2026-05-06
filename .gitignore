@@ -12,3 +12,5 @@ dist/
 build/
 .env
 MUJOCO_LOG.TXT
+mujoco_yolo_inference_package.zip
+yolo_model/*.pt

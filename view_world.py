@@ -20,6 +20,8 @@ import mujoco.viewer
 import numpy as np
 
 MODEL_PATH = "conference_room_with_launcher.xml"
+YOLO_MODEL_PATH = "yolo_model/target_yolo11s_640_best.onnx"
+YOLO_CLASSES_PATH = "yolo_model/classes.txt"
 
 LAUNCH_SPEED = 12.0
 YAW_STEP = np.deg2rad(1)
@@ -27,6 +29,10 @@ PITCH_STEP = np.deg2rad(1)
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 TARGET_FPS = 30
+YOLO_INPUT_SIZE = 640
+YOLO_CONF_THRESHOLD = 0.25
+YOLO_NMS_THRESHOLD = 0.45
+YOLO_INFER_EVERY_N_FRAMES = 3
 VIEW_MOVE_STEP = 0.20
 TARGET_MOVE_STEP = 0.01
 FIRST_BOUNCE_HORIZONTAL_SCALE = 0.65
@@ -92,6 +98,9 @@ viewer_lookat = np.array([0.7, 0.0, 1.0], dtype=float)
 target_pos = data.mocap_pos[target_mocap_id].copy()
 fire_count = 0
 show_cam = False
+yolo_status = "idle"
+yolo_detection_count = 0
+yolo_center_error = None
 bounce_contact_count = 0
 bounce_contact_active = False
 projectile_stopped_on_surface = False
@@ -233,16 +242,21 @@ def draw_control_panel():
         target_pitch_deg = np.rad2deg(pitch_target)
         view_x, view_y, view_z = viewer_lookat
         target_x, target_y, target_z = target_pos
+        yolo_text = yolo_status
+        if yolo_center_error is not None:
+            err_x, err_y = yolo_center_error
+            yolo_text = f"{yolo_status} dx {err_x:+.0f} dy {err_y:+.0f}"
         shots = fire_count
         camera_on = show_cam
 
-    img = np.full((288, 440, 3), (28, 30, 34), dtype=np.uint8)
+    img = np.full((322, 480, 3), (28, 30, 34), dtype=np.uint8)
     lines = [
         "Controls window focused",
         f"Yaw:   {yaw_deg:+7.1f} deg  target {target_yaw_deg:+7.1f}",
         f"Pitch: {pitch_deg:+7.1f} deg  target {target_pitch_deg:+7.1f}",
         f"View:  x {view_x:+5.1f}  y {view_y:+5.1f}  z {view_z:+5.1f}",
         f"Target:x {target_x:+5.2f} y {target_y:+5.2f} z {target_z:+5.2f}",
+        f"YOLO:  {yolo_text}",
         f"Shots: {shots}",
         f"Aim camera: {'ON' if camera_on else 'OFF'}",
     ]
@@ -269,6 +283,121 @@ def draw_aim_hud(img):
     return img
 
 
+def load_yolo_classes():
+    try:
+        with open(YOLO_CLASSES_PATH, "r", encoding="utf-8") as f:
+            names = [line.strip() for line in f if line.strip()]
+    except OSError:
+        names = []
+    return names or ["target"]
+
+
+def letterbox_image(bgr, new_size=YOLO_INPUT_SIZE):
+    h, w = bgr.shape[:2]
+    scale = min(new_size / w, new_size / h)
+    resized_w = int(round(w * scale))
+    resized_h = int(round(h * scale))
+    resized = cv2.resize(bgr, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
+    canvas = np.full((new_size, new_size, 3), 114, dtype=np.uint8)
+    pad_x = (new_size - resized_w) // 2
+    pad_y = (new_size - resized_h) // 2
+    canvas[pad_y:pad_y + resized_h, pad_x:pad_x + resized_w] = resized
+    return canvas, scale, pad_x, pad_y
+
+
+def load_yolo_net():
+    return cv2.dnn.readNetFromONNX(YOLO_MODEL_PATH)
+
+
+def run_yolo_inference(net, bgr):
+    input_img, scale, pad_x, pad_y = letterbox_image(bgr)
+    blob = cv2.dnn.blobFromImage(input_img, scalefactor=1.0 / 255.0, size=(YOLO_INPUT_SIZE, YOLO_INPUT_SIZE), swapRB=True, crop=False)
+    net.setInput(blob)
+    output = net.forward()
+
+    preds = np.squeeze(output)
+    if preds.ndim == 2 and preds.shape[0] < preds.shape[1]:
+        preds = preds.T
+
+    boxes = []
+    confidences = []
+    frame_h, frame_w = bgr.shape[:2]
+
+    for pred in preds:
+        if pred.shape[0] < 5:
+            continue
+        cx, cy, bw, bh = pred[:4]
+        class_scores = pred[4:]
+        class_id = int(np.argmax(class_scores))
+        conf = float(class_scores[class_id])
+        if conf < YOLO_CONF_THRESHOLD:
+            continue
+
+        x1 = (cx - bw / 2 - pad_x) / scale
+        y1 = (cy - bh / 2 - pad_y) / scale
+        x2 = (cx + bw / 2 - pad_x) / scale
+        y2 = (cy + bh / 2 - pad_y) / scale
+
+        x1 = int(np.clip(x1, 0, frame_w - 1))
+        y1 = int(np.clip(y1, 0, frame_h - 1))
+        x2 = int(np.clip(x2, 0, frame_w - 1))
+        y2 = int(np.clip(y2, 0, frame_h - 1))
+        if x2 <= x1 or y2 <= y1:
+            continue
+
+        boxes.append([x1, y1, x2 - x1, y2 - y1])
+        confidences.append(conf)
+
+    keep = cv2.dnn.NMSBoxes(boxes, confidences, YOLO_CONF_THRESHOLD, YOLO_NMS_THRESHOLD)
+    keep = np.array(keep).reshape(-1) if len(keep) else []
+    detections = []
+    for idx in keep:
+        x, y, w, h = boxes[int(idx)]
+        detections.append({
+            "box": (x, y, x + w, y + h),
+            "conf": confidences[int(idx)],
+            "class_id": 0,
+        })
+    return detections
+
+
+def draw_yolo_detections(img, detections, class_names):
+    h, w = img.shape[:2]
+    cv2.drawMarker(img, (w // 2, h // 2), (255, 255, 255), cv2.MARKER_CROSS, 16, 1, cv2.LINE_AA)
+
+    best = None
+    for det in detections:
+        x1, y1, x2, y2 = det["box"]
+        conf = det["conf"]
+        label = class_names[det["class_id"]] if det["class_id"] < len(class_names) else "target"
+        color = (70, 240, 90)
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(img, f"{label} {conf:.2f}", (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
+        if best is None or conf > best["conf"]:
+            best = det
+
+    if best is None:
+        return None
+
+    x1, y1, x2, y2 = best["box"]
+    cx = (x1 + x2) / 2
+    cy = (y1 + y2) / 2
+    err_x = cx - w / 2
+    err_y = cy - h / 2
+    cv2.circle(img, (int(cx), int(cy)), 4, (0, 255, 255), -1, cv2.LINE_AA)
+    cv2.line(img, (w // 2, h // 2), (int(cx), int(cy)), (0, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(img, f"err {err_x:+.0f}, {err_y:+.0f}", (10, h - 16), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
+    return err_x, err_y
+
+
+def set_yolo_status(status, detections=None, center_error=None):
+    global yolo_center_error, yolo_detection_count, yolo_status
+    with data_lock:
+        yolo_status = status
+        yolo_detection_count = len(detections) if detections is not None else 0
+        yolo_center_error = center_error
+
+
 def apply_webcam_room_look(bgr):
     """Approximate the cool, bright, slightly bloomed look of the reference camera."""
     img = bgr.astype(np.float32)
@@ -286,11 +415,15 @@ def apply_webcam_room_look(bgr):
 
 def ui_thread_fn():
     renderer = None
+    yolo_net = None
+    yolo_classes = load_yolo_classes()
+    yolo_detections = []
+    frame_index = 0
     interval = 1.0 / TARGET_FPS
     control_win = "Controls"
     aim_win = "Aim Camera"
     cv2.namedWindow(control_win, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(control_win, 440, 288)
+    cv2.resizeWindow(control_win, 480, 322)
 
     while not quit_event.is_set():
         t0 = time.time()
@@ -309,8 +442,23 @@ def ui_thread_fn():
         if rgb is not None:
             bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             bgr = apply_webcam_room_look(bgr)
+            frame_index += 1
+            if frame_index % YOLO_INFER_EVERY_N_FRAMES == 0:
+                try:
+                    if yolo_net is None:
+                        yolo_net = load_yolo_net()
+                    yolo_detections = run_yolo_inference(yolo_net, bgr)
+                    status = f"{len(yolo_detections)} target" if yolo_detections else "no target"
+                    set_yolo_status(status, yolo_detections)
+                except Exception as exc:
+                    yolo_detections = []
+                    set_yolo_status(f"error: {type(exc).__name__}", [])
+            center_error = draw_yolo_detections(bgr, yolo_detections, yolo_classes)
+            if yolo_detections:
+                set_yolo_status(f"{len(yolo_detections)} target", yolo_detections, center_error)
             cv2.imshow(aim_win, draw_aim_hud(bgr))
         else:
+            set_yolo_status("idle", [])
             try:
                 if cv2.getWindowProperty(aim_win, cv2.WND_PROP_VISIBLE) >= 1:
                     cv2.destroyWindow(aim_win)
