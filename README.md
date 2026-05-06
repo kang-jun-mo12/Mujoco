@@ -29,9 +29,11 @@ Use the OpenCV `Controls` window for keyboard input.
 
 - `conference_room_with_launcher.xml`: conference room world, launcher, and target model
 - `view_world.py`: main conference room simulation
+- `collect_aim_dataset.py`: automated YOLO bbox to aim-delta CSV collector
 - `rubber_band_launcher.xml`: standalone launcher model
 - `test.py`: standalone launcher simulation
 - `progress_summary.md`: detailed project notes
+- `project_workflow.md`: completed work and next-step workflow
 - `yolo_model/target_yolo11s_640_best.onnx`: target detector used by the aim camera
 
 ## Collect Aim Dataset
