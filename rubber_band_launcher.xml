@@ -1,0 +1,63 @@
+<mujoco model="rubber_band_launcher">
+  <option gravity="0 0 -9.81" timestep="0.002"/>
+
+  <asset>
+    <texture type="2d" name="floor_tex" builtin="checker" rgb1="0.3 0.3 0.3" rgb2="0.5 0.5 0.5" width="512" height="512"/>
+    <material name="floor_mat" texture="floor_tex" texrepeat="4 4" reflectance="0.1"/>
+    <material name="metal" rgba="0.6 0.6 0.7 1"/>
+    <material name="rubber" rgba="1 0.85 0.05 1"/>
+    <material name="gun_mat" rgba="0.25 0.25 0.3 1"/>
+  </asset>
+
+  <default>
+    <default class="launcher_visual">
+      <geom contype="0" conaffinity="0"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <geom name="floor" type="plane" size="10 10 0.1" material="floor_mat"/>
+
+    <body name="base" pos="0 0 0.15">
+      <geom name="base_box" class="launcher_visual" type="box" size="0.12 0.12 0.12" material="metal"/>
+
+      <body name="yaw_stage" pos="0 0 0.15">
+        <joint name="yaw_joint" type="hinge" axis="0 0 1" damping="2"/>
+        <geom name="yaw_plate" class="launcher_visual" type="box" size="0.10 0.10 0.02" material="metal"/>
+
+        <body name="gun_body" pos="0 0 0.05">
+          <geom name="gun_rear" class="launcher_visual" type="box" size="0.05 0.04 0.05" pos="-0.04 0 0" material="gun_mat"/>
+          <geom name="gun_mid" class="launcher_visual" type="box" size="0.06 0.035 0.04" pos="0.04 0 0" material="gun_mat"/>
+
+          <body name="pitch_stage" pos="0.08 0 0.01">
+            <joint name="pitch_joint" type="hinge" axis="0 1 0" damping="1.5"/>
+            <geom name="pitch_block" class="launcher_visual" type="box" size="0.04 0.035 0.03" material="metal"/>
+
+            <body name="barrel" pos="0.1 0 0">
+              <geom name="barrel_geom" class="launcher_visual" type="capsule" fromto="-0.1 0 0  0.12 0 0" size="0.015" material="gun_mat"/>
+
+              <site name="muzzle_site" pos="0.12 0 0" size="0.01" rgba="1 0 0 0.5"/>
+
+              <!-- Camera mounted at the muzzle. MuJoCo cameras look along local -Z, so this points down barrel +X. -->
+              <camera name="aim_camera" pos="0.125 0 0" xyaxes="0 -1 0  0 0 1" fovy="60"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <body name="rubber_projectile" pos="0.30 0 0.35">
+      <freejoint name="rubber_joint"/>
+      <geom name="rb_1" type="capsule" fromto="-0.025  0.015 0   0.025  0.015 0" size="0.004" material="rubber" mass="0.003"/>
+      <geom name="rb_2" type="capsule" fromto="-0.025 -0.015 0   0.025 -0.015 0" size="0.004" material="rubber" mass="0.003"/>
+      <geom name="rb_3" type="capsule" fromto="-0.025 -0.015 0  -0.025  0.015 0" size="0.004" material="rubber" mass="0.003"/>
+      <geom name="rb_4" type="capsule" fromto=" 0.025 -0.015 0   0.025  0.015 0" size="0.004" material="rubber" mass="0.003"/>
+      <site name="proj_site" size="0.005"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="yaw_motor" joint="yaw_joint" kp="50" gear="1"/>
+    <position name="pitch_motor" joint="pitch_joint" kp="40" gear="1"/>
+  </actuator>
+</mujoco>

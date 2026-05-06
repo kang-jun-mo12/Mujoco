@@ -1,0 +1,225 @@
+<mujoco model="conference_room_with_launcher">
+  <option gravity="0 0 -9.81" timestep="0.002"/>
+
+  <visual>
+    <headlight active="1" ambient="0.30 0.35 0.42" diffuse="0.62 0.68 0.78" specular="0.24 0.26 0.30"/>
+    <quality shadowsize="4096"/>
+    <map znear="0.01" zfar="50"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" name="skybox" builtin="gradient" rgb1="0.22 0.27 0.25" rgb2="0.22 0.27 0.25" width="512" height="512"/>
+    <texture type="2d" name="floor_tex" builtin="checker" rgb1="0.72 0.70 0.66" rgb2="0.78 0.77 0.73" width="512" height="512"/>
+    <material name="floor_mat" texture="floor_tex" texrepeat="8 5" reflectance="0.14"/>
+    <material name="wall_mat" rgba="0.78 0.83 0.84 1" reflectance="0.18"/>
+    <material name="ceiling_mat" rgba="0.76 0.77 0.80 1" reflectance="0.12"/>
+    <material name="glass_mat" rgba="0.12 0.16 0.14 0.28" reflectance="0.02"/>
+    <material name="outside_view_mat" rgba="0.22 0.27 0.25 1" reflectance="0"/>
+    <material name="frame_mat" rgba="0.80 0.84 0.86 1" reflectance="0.28"/>
+    <material name="table_mat" rgba="0.43 0.273 0.18 1" reflectance="0"/>
+    <material name="table_edge_mat" rgba="0.43 0.273 0.18 1" reflectance="0"/>
+    <material name="chair_dark" rgba="0.08 0.08 0.10 1" reflectance="0.10"/>
+    <material name="chair_gray" rgba="0.22 0.23 0.26 1" reflectance="0.12"/>
+    <material name="chair_pink" rgba="0.70 0.34 0.48 1" reflectance="0.14"/>
+    <material name="screen_mat" rgba="0.004 0.005 0.007 1" reflectance="0.18"/>
+    <material name="screen_glare_mat" rgba="0.85 0.92 1.0 0.30" emission="0.18"/>
+    <material name="light_mat" rgba="0.90 0.96 1.0 1" emission="0.72"/>
+    <material name="target_mat" rgba="0.392 0.181 0.117 1" reflectance="0"/>
+    <material name="metal" rgba="0.6 0.6 0.7 1"/>
+    <material name="rubber" rgba="1 0.85 0.05 1"/>
+    <material name="gun_mat" rgba="0.25 0.25 0.3 1"/>
+  </asset>
+
+  <default>
+    <default class="launcher_visual">
+      <geom contype="0" conaffinity="0"/>
+    </default>
+    <default class="chair_leg">
+      <geom type="cylinder" size="0.025 0.28" material="chair_dark"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light name="ceiling_light_front" pos="3.1 0 2.55" dir="0 0 -1" diffuse="0.78 0.84 0.95" specular="0.30 0.32 0.38" cutoff="100"/>
+    <light name="ceiling_light_mid" pos="0.6 0 2.55" dir="0 0 -1" diffuse="0.86 0.92 1.02" specular="0.32 0.34 0.40" cutoff="105"/>
+    <light name="ceiling_light_back" pos="-2.2 0 2.55" dir="0 0 -1" diffuse="0.74 0.80 0.92" specular="0.28 0.30 0.36" cutoff="100"/>
+    <light name="left_glass_reflection" pos="0 2.25 1.8" dir="0 -1 -0.15" diffuse="0.08 0.14 0.22" specular="0.08 0.11 0.16" cutoff="90"/>
+    <light name="right_glass_reflection" pos="0 -2.25 1.8" dir="0 1 -0.15" diffuse="0.08 0.14 0.22" specular="0.08 0.11 0.16" cutoff="90"/>
+    <light name="screen_fill_light" pos="4.55 0 2.05" dir="-1 0 -0.35" diffuse="0.38 0.46 0.60" specular="0.12 0.14 0.18" cutoff="85"/>
+
+    <geom name="floor" type="plane" size="8 5 0.1" material="floor_mat"/>
+    <geom name="ceiling" type="box" pos="0.8 0 2.75" size="4.8 2.55 0.04" material="ceiling_mat" contype="0" conaffinity="0"/>
+
+    <geom name="left_outside_view" type="box" pos="0.4 2.62 1.35" size="4.7 0.025 1.25" material="outside_view_mat" contype="0" conaffinity="0"/>
+    <geom name="right_outside_view" type="box" pos="0.4 -2.62 1.35" size="4.7 0.025 1.25" material="outside_view_mat" contype="0" conaffinity="0"/>
+    <geom name="front_outside_view" type="box" pos="5.20 0 1.35" size="0.025 2.45 1.25" material="outside_view_mat" contype="0" conaffinity="0"/>
+
+    <geom name="light_panel_back" type="box" pos="-2.0 0 2.695" size="0.82 0.105 0.012" material="light_mat" contype="0" conaffinity="0"/>
+    <geom name="light_panel_mid" type="box" pos="0.75 0 2.695" size="0.95 0.105 0.012" material="light_mat" contype="0" conaffinity="0"/>
+    <geom name="light_panel_front" type="box" pos="3.35 0 2.695" size="0.82 0.105 0.012" material="light_mat" contype="0" conaffinity="0"/>
+
+    <geom name="front_glass_wall_left" type="box" pos="5.05 1.65 1.35" size="0.025 0.72 1.10" material="glass_mat"/>
+    <geom name="front_glass_wall_mid_left" type="box" pos="5.05 0.82 1.35" size="0.025 0.36 1.10" material="glass_mat"/>
+    <geom name="front_glass_wall_mid_right" type="box" pos="5.05 -0.82 1.35" size="0.025 0.36 1.10" material="glass_mat"/>
+    <geom name="front_glass_wall_right" type="box" pos="5.05 -1.65 1.35" size="0.025 0.72 1.10" material="glass_mat"/>
+    <geom name="front_frame_floor" type="box" pos="5.075 0 0.28" size="0.03 2.45 0.035" material="frame_mat"/>
+    <geom name="front_frame_ceiling" type="box" pos="5.075 0 2.47" size="0.03 2.45 0.035" material="frame_mat"/>
+    <geom name="front_frame_left" type="box" pos="5.075 2.37 1.35" size="0.03 0.025 1.15" material="frame_mat"/>
+    <geom name="front_frame_mid_left" type="box" pos="5.075 0.45 1.35" size="0.03 0.025 1.15" material="frame_mat"/>
+    <geom name="front_frame_mid_right" type="box" pos="5.075 -0.45 1.35" size="0.03 0.025 1.15" material="frame_mat"/>
+    <geom name="front_frame_right" type="box" pos="5.075 -2.37 1.35" size="0.03 0.025 1.15" material="frame_mat"/>
+    <geom name="front_screen" type="box" pos="4.985 0 1.45" size="0.025 1.34 0.57" material="screen_mat" contype="0" conaffinity="0"/>
+    <geom name="front_screen_glare" type="box" pos="4.955 0 1.66" size="0.006 0.42 0.16" material="screen_glare_mat" contype="0" conaffinity="0"/>
+    <geom name="front_screen_frame_top" type="box" pos="4.97 0 2.03" size="0.03 1.35 0.025" material="frame_mat" contype="0" conaffinity="0"/>
+    <geom name="front_screen_frame_bottom" type="box" pos="4.97 0 0.87" size="0.03 1.35 0.025" material="frame_mat" contype="0" conaffinity="0"/>
+    <geom name="front_screen_frame_left" type="box" pos="4.97 1.35 1.45" size="0.03 0.025 0.60" material="frame_mat" contype="0" conaffinity="0"/>
+    <geom name="front_screen_frame_right" type="box" pos="4.97 -1.35 1.45" size="0.03 0.025 0.60" material="frame_mat" contype="0" conaffinity="0"/>
+
+    <geom name="left_glass_wall_1" type="box" pos="-2.6 2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+    <geom name="left_glass_wall_2" type="box" pos="-1.1 2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+    <geom name="left_glass_wall_3" type="box" pos="0.4 2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+    <geom name="left_glass_wall_4" type="box" pos="1.9 2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+    <geom name="left_glass_wall_5" type="box" pos="3.4 2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+    <geom name="right_glass_wall_1" type="box" pos="-2.6 -2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+    <geom name="right_glass_wall_2" type="box" pos="-1.1 -2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+    <geom name="right_glass_wall_3" type="box" pos="0.4 -2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+    <geom name="right_glass_wall_4" type="box" pos="1.9 -2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+    <geom name="right_glass_wall_5" type="box" pos="3.4 -2.45 1.35" size="0.72 0.025 1.10" material="glass_mat"/>
+
+    <geom name="left_frame_floor" type="box" pos="0.4 2.47 0.28" size="3.8 0.025 0.035" material="frame_mat"/>
+    <geom name="left_frame_ceiling" type="box" pos="0.4 2.47 2.47" size="3.8 0.025 0.035" material="frame_mat"/>
+    <geom name="right_frame_floor" type="box" pos="0.4 -2.47 0.28" size="3.8 0.025 0.035" material="frame_mat"/>
+    <geom name="right_frame_ceiling" type="box" pos="0.4 -2.47 2.47" size="3.8 0.025 0.035" material="frame_mat"/>
+    <geom name="left_frame_1" type="box" pos="-3.35 2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="left_frame_2" type="box" pos="-1.85 2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="left_frame_3" type="box" pos="-0.35 2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="left_frame_4" type="box" pos="1.15 2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="left_frame_5" type="box" pos="2.65 2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="left_frame_6" type="box" pos="4.15 2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="right_frame_1" type="box" pos="-3.35 -2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="right_frame_2" type="box" pos="-1.85 -2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="right_frame_3" type="box" pos="-0.35 -2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="right_frame_4" type="box" pos="1.15 -2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="right_frame_5" type="box" pos="2.65 -2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+    <geom name="right_frame_6" type="box" pos="4.15 -2.47 1.35" size="0.025 0.03 1.15" material="frame_mat"/>
+
+    <body name="long_table" pos="0.6 0 0.75">
+      <geom name="long_table_top" type="box" pos="0 0 0" size="3.6 0.9 0.045" material="table_mat"/>
+      <geom name="table_leg_back_left" type="box" pos="-3.15 0.70 -0.39" size="0.055 0.055 0.34" material="table_edge_mat"/>
+      <geom name="table_leg_back_right" type="box" pos="-3.15 -0.70 -0.39" size="0.055 0.055 0.34" material="table_edge_mat"/>
+      <geom name="table_leg_front_left" type="box" pos="3.15 0.70 -0.39" size="0.055 0.055 0.34" material="table_edge_mat"/>
+      <geom name="table_leg_front_right" type="box" pos="3.15 -0.70 -0.39" size="0.055 0.055 0.34" material="table_edge_mat"/>
+    </body>
+
+    <body name="target_object" mocap="true" pos="-1.20 0 0.805">
+      <geom name="target_base_rect" type="box" pos="0 0 0" size="0.0054 0.045 0.018" material="target_mat"/>
+      <geom name="target_stem" type="box" pos="0 0 0.054" size="0.0054 0.0135 0.036" material="target_mat"/>
+      <geom name="target_round_head" type="sphere" pos="0 0 0.108" size="0.036" material="target_mat"/>
+    </body>
+
+    <body name="chair_left_1" pos="-1.9 1.35 0.43">
+      <geom name="chair_left_1_seat" type="box" size="0.25 0.25 0.045" material="chair_dark"/>
+      <geom name="chair_left_1_back" type="box" pos="0 0.16 0.31" size="0.27 0.045 0.31" material="chair_dark"/>
+      <geom name="chair_left_1_leg_fl" class="chair_leg" pos="0.18 0.18 -0.24"/>
+      <geom name="chair_left_1_leg_fr" class="chair_leg" pos="0.18 -0.18 -0.24"/>
+      <geom name="chair_left_1_leg_bl" class="chair_leg" pos="-0.18 0.18 -0.24"/>
+      <geom name="chair_left_1_leg_br" class="chair_leg" pos="-0.18 -0.18 -0.24"/>
+    </body>
+    <body name="chair_left_2" pos="-0.55 1.35 0.43">
+      <geom name="chair_left_2_seat" type="box" size="0.25 0.25 0.045" material="chair_pink"/>
+      <geom name="chair_left_2_back" type="box" pos="0 0.16 0.31" size="0.27 0.045 0.31" material="chair_pink"/>
+      <geom name="chair_left_2_leg_fl" class="chair_leg" pos="0.18 0.18 -0.24"/>
+      <geom name="chair_left_2_leg_fr" class="chair_leg" pos="0.18 -0.18 -0.24"/>
+      <geom name="chair_left_2_leg_bl" class="chair_leg" pos="-0.18 0.18 -0.24"/>
+      <geom name="chair_left_2_leg_br" class="chair_leg" pos="-0.18 -0.18 -0.24"/>
+    </body>
+    <body name="chair_left_3" pos="0.8 1.35 0.43">
+      <geom name="chair_left_3_seat" type="box" size="0.25 0.25 0.045" material="chair_gray"/>
+      <geom name="chair_left_3_back" type="box" pos="0 0.16 0.31" size="0.27 0.045 0.31" material="chair_gray"/>
+      <geom name="chair_left_3_leg_fl" class="chair_leg" pos="0.18 0.18 -0.24"/>
+      <geom name="chair_left_3_leg_fr" class="chair_leg" pos="0.18 -0.18 -0.24"/>
+      <geom name="chair_left_3_leg_bl" class="chair_leg" pos="-0.18 0.18 -0.24"/>
+      <geom name="chair_left_3_leg_br" class="chair_leg" pos="-0.18 -0.18 -0.24"/>
+    </body>
+    <body name="chair_left_4" pos="2.15 1.35 0.43">
+      <geom name="chair_left_4_seat" type="box" size="0.25 0.25 0.045" material="chair_pink"/>
+      <geom name="chair_left_4_back" type="box" pos="0 0.16 0.31" size="0.27 0.045 0.31" material="chair_pink"/>
+      <geom name="chair_left_4_leg_fl" class="chair_leg" pos="0.18 0.18 -0.24"/>
+      <geom name="chair_left_4_leg_fr" class="chair_leg" pos="0.18 -0.18 -0.24"/>
+      <geom name="chair_left_4_leg_bl" class="chair_leg" pos="-0.18 0.18 -0.24"/>
+      <geom name="chair_left_4_leg_br" class="chair_leg" pos="-0.18 -0.18 -0.24"/>
+    </body>
+
+    <body name="chair_right_1" pos="-1.9 -1.35 0.43">
+      <geom name="chair_right_1_seat" type="box" size="0.25 0.25 0.045" material="chair_pink"/>
+      <geom name="chair_right_1_back" type="box" pos="0 -0.16 0.31" size="0.27 0.045 0.31" material="chair_pink"/>
+      <geom name="chair_right_1_leg_fl" class="chair_leg" pos="0.18 0.18 -0.24"/>
+      <geom name="chair_right_1_leg_fr" class="chair_leg" pos="0.18 -0.18 -0.24"/>
+      <geom name="chair_right_1_leg_bl" class="chair_leg" pos="-0.18 0.18 -0.24"/>
+      <geom name="chair_right_1_leg_br" class="chair_leg" pos="-0.18 -0.18 -0.24"/>
+    </body>
+    <body name="chair_right_2" pos="-0.55 -1.35 0.43">
+      <geom name="chair_right_2_seat" type="box" size="0.25 0.25 0.045" material="chair_gray"/>
+      <geom name="chair_right_2_back" type="box" pos="0 -0.16 0.31" size="0.27 0.045 0.31" material="chair_gray"/>
+      <geom name="chair_right_2_leg_fl" class="chair_leg" pos="0.18 0.18 -0.24"/>
+      <geom name="chair_right_2_leg_fr" class="chair_leg" pos="0.18 -0.18 -0.24"/>
+      <geom name="chair_right_2_leg_bl" class="chair_leg" pos="-0.18 0.18 -0.24"/>
+      <geom name="chair_right_2_leg_br" class="chair_leg" pos="-0.18 -0.18 -0.24"/>
+    </body>
+    <body name="chair_right_3" pos="0.8 -1.35 0.43">
+      <geom name="chair_right_3_seat" type="box" size="0.25 0.25 0.045" material="chair_pink"/>
+      <geom name="chair_right_3_back" type="box" pos="0 -0.16 0.31" size="0.27 0.045 0.31" material="chair_pink"/>
+      <geom name="chair_right_3_leg_fl" class="chair_leg" pos="0.18 0.18 -0.24"/>
+      <geom name="chair_right_3_leg_fr" class="chair_leg" pos="0.18 -0.18 -0.24"/>
+      <geom name="chair_right_3_leg_bl" class="chair_leg" pos="-0.18 0.18 -0.24"/>
+      <geom name="chair_right_3_leg_br" class="chair_leg" pos="-0.18 -0.18 -0.24"/>
+    </body>
+    <body name="chair_right_4" pos="2.15 -1.35 0.43">
+      <geom name="chair_right_4_seat" type="box" size="0.25 0.25 0.045" material="chair_dark"/>
+      <geom name="chair_right_4_back" type="box" pos="0 -0.16 0.31" size="0.27 0.045 0.31" material="chair_dark"/>
+      <geom name="chair_right_4_leg_fl" class="chair_leg" pos="0.18 0.18 -0.24"/>
+      <geom name="chair_right_4_leg_fr" class="chair_leg" pos="0.18 -0.18 -0.24"/>
+      <geom name="chair_right_4_leg_bl" class="chair_leg" pos="-0.18 0.18 -0.24"/>
+      <geom name="chair_right_4_leg_br" class="chair_leg" pos="-0.18 -0.18 -0.24"/>
+    </body>
+
+    <body name="base" pos="-2.75 0 0.87">
+      <geom name="base_box" class="launcher_visual" type="box" size="0.12 0.12 0.12" material="metal"/>
+
+      <body name="yaw_stage" pos="0 0 0.15">
+        <joint name="yaw_joint" type="hinge" axis="0 0 1" damping="2"/>
+        <geom name="yaw_plate" class="launcher_visual" type="box" size="0.10 0.10 0.02" material="metal"/>
+
+        <body name="gun_body" pos="0 0 0.05">
+          <geom name="gun_rear" class="launcher_visual" type="box" size="0.05 0.04 0.05" pos="-0.04 0 0" material="gun_mat"/>
+          <geom name="gun_mid" class="launcher_visual" type="box" size="0.06 0.035 0.04" pos="0.04 0 0" material="gun_mat"/>
+
+          <body name="pitch_stage" pos="0.08 0 0.01">
+            <joint name="pitch_joint" type="hinge" axis="0 1 0" damping="1.5"/>
+            <geom name="pitch_block" class="launcher_visual" type="box" size="0.04 0.035 0.03" material="metal"/>
+
+            <body name="barrel" pos="0.1 0 0">
+              <geom name="barrel_geom" class="launcher_visual" type="capsule" fromto="-0.1 0 0  0.12 0 0" size="0.015" material="gun_mat"/>
+              <site name="muzzle_site" pos="0.12 0 0" size="0.01" rgba="1 0 0 0.5"/>
+              <camera name="aim_camera" pos="0.30 0 -0.13" xyaxes="0 -1 0  0 0 1" fovy="76"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <body name="rubber_projectile" pos="-2.45 0 1.08">
+      <freejoint name="rubber_joint"/>
+      <geom name="rb_1" type="capsule" fromto="-0.025  0.015 0   0.025  0.015 0" size="0.004" material="rubber" mass="0.003"/>
+      <geom name="rb_2" type="capsule" fromto="-0.025 -0.015 0   0.025 -0.015 0" size="0.004" material="rubber" mass="0.003"/>
+      <geom name="rb_3" type="capsule" fromto="-0.025 -0.015 0  -0.025  0.015 0" size="0.004" material="rubber" mass="0.003"/>
+      <geom name="rb_4" type="capsule" fromto=" 0.025 -0.015 0   0.025  0.015 0" size="0.004" material="rubber" mass="0.003"/>
+      <site name="proj_site" size="0.005"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="yaw_motor" joint="yaw_joint" kp="50" gear="1"/>
+    <position name="pitch_motor" joint="pitch_joint" kp="40" gear="1"/>
+  </actuator>
+</mujoco>
