@@ -33,3 +33,13 @@ Use the OpenCV `Controls` window for keyboard input.
 - `test.py`: standalone launcher simulation
 - `progress_summary.md`: detailed project notes
 - `yolo_model/target_yolo11s_640_best.onnx`: target detector used by the aim camera
+
+## Collect Aim Dataset
+
+Generate CSV rows that connect YOLO bbox observations to the yaw/pitch delta needed to hit the target:
+
+```powershell
+.\.venv\Scripts\python.exe collect_aim_dataset.py --output datasets\aim_training_data.csv
+```
+
+Each row contains target position, bbox center/size/confidence, current yaw/pitch, hit yaw/pitch, and `delta_yaw` / `delta_pitch` labels.

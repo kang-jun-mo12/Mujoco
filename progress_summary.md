@@ -32,6 +32,9 @@ matplotlib>=3.7.0
 - `view_world.py`
   - 회의실 월드를 실행하는 Python 스크립트입니다.
   - 키 입력, 발사, 조준 카메라, YOLO 추론, viewer 카메라 이동, 타겟 이동, 고무줄 튕김 제어를 담당합니다.
+- `collect_aim_dataset.py`
+  - 타겟을 테이블 위 grid 위치로 옮기며 YOLO bbox와 조준 보정량을 CSV로 기록하는 데이터 수집 스크립트입니다.
+  - 카메라가 포신에 붙어 있는 구조를 반영해 절대 서보값이 아니라 `delta_yaw`, `delta_pitch`를 핵심 라벨로 기록합니다.
 - `rubber_band_launcher.xml`
   - 기존 단독 launcher 모델입니다.
 - `test.py`
@@ -352,6 +355,77 @@ YOLO:  1 target dx +12 dy -8
 
 Aim Camera가 꺼져 있을 때는 YOLO 추론도 쉬고, `P`로 Aim Camera를 켰을 때 renderer와 모델을 지연 생성합니다.
 
+## 조준 데이터셋 수집
+
+자동 조준 모델 학습을 위해 `collect_aim_dataset.py`를 추가했습니다.  
+이 스크립트는 MuJoCo viewer를 띄우지 않고 오프스크린으로 Aim Camera를 렌더링하며, 테이블 위 타겟 위치마다 YOLO bbox와 맞는 조준 보정량을 CSV로 저장합니다.
+
+기본 실행:
+
+```powershell
+.\.venv\Scripts\python.exe collect_aim_dataset.py --output datasets\aim_training_data.csv
+```
+
+빠른 테스트 예시:
+
+```powershell
+.\.venv\Scripts\python.exe collect_aim_dataset.py --output logs\aim_dataset_smoke.csv --x-min -1.2 --x-max -1.2 --y-min 0 --y-max 0 --position-step 1 --current-yaw-offsets-deg 0 --current-pitch-offsets-deg 0 --max-positions 1
+```
+
+수집 흐름:
+
+1. 타겟을 테이블 위 grid 위치로 이동합니다.
+2. 현재 타겟 위치를 맞출 수 있는 `hit_yaw`, `hit_pitch`를 MuJoCo 발사 시뮬레이션으로 탐색합니다.
+3. `hit_yaw`, `hit_pitch` 주변의 여러 현재 조준각을 만듭니다.
+4. 각 현재 조준각에서 Aim Camera를 렌더링합니다.
+5. YOLO로 타겟 bbox를 검출합니다.
+6. 현재 조준각에서 hit 조준각까지의 차이를 `delta_yaw`, `delta_pitch`로 기록합니다.
+
+핵심은 카메라가 포신에 붙어 있다는 점입니다.  
+따라서 학습 라벨은 절대 각도보다 현재 포신 방향 기준 보정량인 아래 값이 더 중요합니다.
+
+```text
+delta_yaw   = hit_yaw   - current_yaw
+delta_pitch = hit_pitch - current_pitch
+```
+
+CSV 주요 컬럼:
+
+```text
+target_x,target_y,target_z
+bbox_x1,bbox_y1,bbox_x2,bbox_y2
+bbox_cx,bbox_cy,bbox_w,bbox_h,bbox_area,bbox_conf
+norm_err_x,norm_err_y,bbox_w_norm,bbox_h_norm,bbox_area_norm
+current_yaw_deg,current_pitch_deg
+hit_yaw_deg,hit_pitch_deg
+delta_yaw_deg,delta_pitch_deg
+hit_time_sec,hit_success
+```
+
+기본 grid 설정:
+
+```text
+x: -1.8m ~ 3.0m
+y: -0.6m ~ 0.6m
+step: 0.3m
+```
+
+기본 현재 조준 offset:
+
+```text
+yaw offsets:   -4, -2, 0, 2, 4 deg
+pitch offsets: -3, 0, 3 deg
+```
+
+Smoke test 결과:
+
+```text
+target=(-1.20, 0.00)
+hit yaw=-0.00 deg
+hit pitch=+6.89 deg
+rows=1
+```
+
 ## 고무줄 발사 구조
 
 고무줄은 `rubber_projectile` body입니다.
@@ -435,6 +509,7 @@ FIRST_BOUNCE_ANGULAR_SCALE = 0.25
 
 - `conference_room_with_launcher.xml` 로드 정상
 - `view_world.py`, `test.py` 문법 검사 통과
+- `collect_aim_dataset.py` 문법 검사 통과
 - actuator는 `yaw_motor`, `pitch_motor` 2개만 존재
 - 포신 방향과 aim camera 방향이 월드 `+X`로 정렬
 - 초기 내부 접촉이 yaw를 막지 않음
@@ -442,6 +517,7 @@ FIRST_BOUNCE_ANGULAR_SCALE = 0.25
 - 타겟 오브젝트는 실제 규격 기반의 mocap body로 구현됨
 - 타겟 이동은 `F/H`로 좌우, `T/G`로 launcher-스크린 방향 이동
 - YOLO ONNX 모델은 OpenCV DNN으로 로드됨
+- 조준 데이터 수집 smoke test에서 CSV 1행 생성 확인
 - trigger 관련 조인트/액추에이터 없음
 - OpenCV `Controls` 창에서 모든 프로젝트 키 입력 처리
 
