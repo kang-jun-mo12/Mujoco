@@ -6,6 +6,7 @@ Focus the "Controls" OpenCV window for keyboard input:
   A/D     - Yaw left/right
   Space   - Fire rubber band
   P       - Toggle aim-camera window
+  O       - Apply one YOLO-to-aim model correction
   Esc     - Quit
 
 The MuJoCo viewer is intentionally view-only.
@@ -19,9 +20,12 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
+from aim_delta_model import AimDeltaModel
+
 MODEL_PATH = "conference_room_with_launcher.xml"
 YOLO_MODEL_PATH = "yolo_model/target_yolo11s_640_best.onnx"
 YOLO_CLASSES_PATH = "yolo_model/classes.txt"
+AIM_MODEL_PATH = "models/aim_delta_ridge_5cm.npz"
 
 LAUNCH_SPEED = 12.0
 YAW_STEP = np.deg2rad(1)
@@ -53,6 +57,7 @@ KEY_I = ord("i")
 KEY_J = ord("j")
 KEY_K = ord("k")
 KEY_L = ord("l")
+KEY_O = ord("o")
 KEY_P = ord("p")
 KEY_T = ord("t")
 KEY_SPACE = 32
@@ -101,6 +106,9 @@ show_cam = False
 yolo_status = "idle"
 yolo_detection_count = 0
 yolo_center_error = None
+last_yolo_detection = None
+aim_delta_model = None
+aim_model_status = "manual"
 bounce_contact_count = 0
 bounce_contact_active = False
 projectile_stopped_on_surface = False
@@ -188,6 +196,43 @@ def update_projectile_bounce_limit():
     bounce_contact_active = touching
 
 
+def load_aim_delta_model_once():
+    global aim_delta_model, aim_model_status
+    if aim_delta_model is not None:
+        return aim_delta_model
+
+    try:
+        aim_delta_model = AimDeltaModel.load(AIM_MODEL_PATH)
+        aim_model_status = f"loaded alpha {aim_delta_model.alpha:g}"
+    except Exception as exc:
+        aim_model_status = f"model error {type(exc).__name__}"
+        aim_delta_model = None
+    return aim_delta_model
+
+
+def apply_auto_aim_once():
+    global aim_model_status, pitch_target, yaw_target
+
+    model_obj = load_aim_delta_model_once()
+    if model_obj is None:
+        return
+    if last_yolo_detection is None:
+        aim_model_status = "no YOLO target"
+        return
+
+    yaw_now = float(data.qpos[model.jnt_qposadr[yaw_jid]])
+    pitch_now = float(data.qpos[model.jnt_qposadr[pitch_jid]])
+    delta_yaw, delta_pitch = model_obj.predict_detection(last_yolo_detection, yaw_now, pitch_now)
+
+    delta_yaw = float(np.clip(delta_yaw, np.deg2rad(-5), np.deg2rad(5)))
+    delta_pitch = float(np.clip(delta_pitch, np.deg2rad(-4), np.deg2rad(4)))
+    yaw_target = yaw_now + delta_yaw
+    pitch_target = pitch_now + delta_pitch
+    data.ctrl[0] = yaw_target
+    data.ctrl[1] = pitch_target
+    aim_model_status = f"dyaw {np.rad2deg(delta_yaw):+.2f} dpitch {np.rad2deg(delta_pitch):+.2f}"
+
+
 def handle_key(raw_key):
     global yaw_target, pitch_target, show_cam
 
@@ -226,6 +271,8 @@ def handle_key(raw_key):
             viewer_lookat[1] += VIEW_MOVE_STEP
         elif key == KEY_L:
             viewer_lookat[1] -= VIEW_MOVE_STEP
+        elif key == KEY_O:
+            apply_auto_aim_once()
         elif key == KEY_SPACE:
             do_fire()
         elif key == KEY_P:
@@ -243,13 +290,14 @@ def draw_control_panel():
         view_x, view_y, view_z = viewer_lookat
         target_x, target_y, target_z = target_pos
         yolo_text = yolo_status
+        aim_text = aim_model_status
         if yolo_center_error is not None:
             err_x, err_y = yolo_center_error
             yolo_text = f"{yolo_status} dx {err_x:+.0f} dy {err_y:+.0f}"
         shots = fire_count
         camera_on = show_cam
 
-    img = np.full((322, 480, 3), (28, 30, 34), dtype=np.uint8)
+    img = np.full((356, 480, 3), (28, 30, 34), dtype=np.uint8)
     lines = [
         "Controls window focused",
         f"Yaw:   {yaw_deg:+7.1f} deg  target {target_yaw_deg:+7.1f}",
@@ -257,6 +305,7 @@ def draw_control_panel():
         f"View:  x {view_x:+5.1f}  y {view_y:+5.1f}  z {view_z:+5.1f}",
         f"Target:x {target_x:+5.2f} y {target_y:+5.2f} z {target_z:+5.2f}",
         f"YOLO:  {yolo_text}",
+        f"Aim:   {aim_text}",
         f"Shots: {shots}",
         f"Aim camera: {'ON' if camera_on else 'OFF'}",
     ]
@@ -361,11 +410,19 @@ def run_yolo_inference(net, bgr):
     return detections
 
 
+def best_detection(detections):
+    best = None
+    for det in detections:
+        if best is None or det["conf"] > best["conf"]:
+            best = det
+    return best
+
+
 def draw_yolo_detections(img, detections, class_names):
     h, w = img.shape[:2]
     cv2.drawMarker(img, (w // 2, h // 2), (255, 255, 255), cv2.MARKER_CROSS, 16, 1, cv2.LINE_AA)
 
-    best = None
+    best = best_detection(detections)
     for det in detections:
         x1, y1, x2, y2 = det["box"]
         conf = det["conf"]
@@ -373,11 +430,9 @@ def draw_yolo_detections(img, detections, class_names):
         color = (70, 240, 90)
         cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
         cv2.putText(img, f"{label} {conf:.2f}", (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
-        if best is None or conf > best["conf"]:
-            best = det
 
     if best is None:
-        return None
+        return None, None
 
     x1, y1, x2, y2 = best["box"]
     cx = (x1 + x2) / 2
@@ -387,15 +442,22 @@ def draw_yolo_detections(img, detections, class_names):
     cv2.circle(img, (int(cx), int(cy)), 4, (0, 255, 255), -1, cv2.LINE_AA)
     cv2.line(img, (w // 2, h // 2), (int(cx), int(cy)), (0, 255, 255), 1, cv2.LINE_AA)
     cv2.putText(img, f"err {err_x:+.0f}, {err_y:+.0f}", (10, h - 16), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
-    return err_x, err_y
+    return (err_x, err_y), best
 
 
-def set_yolo_status(status, detections=None, center_error=None):
-    global yolo_center_error, yolo_detection_count, yolo_status
+def set_yolo_status(status, detections=None, center_error=None, best=None):
+    global last_yolo_detection, yolo_center_error, yolo_detection_count, yolo_status
     with data_lock:
         yolo_status = status
         yolo_detection_count = len(detections) if detections is not None else 0
         yolo_center_error = center_error
+        if best is not None:
+            last_yolo_detection = {
+                "box": tuple(best["box"]),
+                "conf": float(best["conf"]),
+            }
+        elif detections is not None and not detections:
+            last_yolo_detection = None
 
 
 def apply_webcam_room_look(bgr):
@@ -423,7 +485,7 @@ def ui_thread_fn():
     control_win = "Controls"
     aim_win = "Aim Camera"
     cv2.namedWindow(control_win, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(control_win, 480, 322)
+    cv2.resizeWindow(control_win, 480, 356)
 
     while not quit_event.is_set():
         t0 = time.time()
@@ -453,9 +515,9 @@ def ui_thread_fn():
                 except Exception as exc:
                     yolo_detections = []
                     set_yolo_status(f"error: {type(exc).__name__}", [])
-            center_error = draw_yolo_detections(bgr, yolo_detections, yolo_classes)
+            center_error, best = draw_yolo_detections(bgr, yolo_detections, yolo_classes)
             if yolo_detections:
-                set_yolo_status(f"{len(yolo_detections)} target", yolo_detections, center_error)
+                set_yolo_status(f"{len(yolo_detections)} target", yolo_detections, center_error, best)
             cv2.imshow(aim_win, draw_aim_hud(bgr))
         else:
             set_yolo_status("idle", [])

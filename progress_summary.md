@@ -141,6 +141,7 @@ viewer는 보기 전용이며, 프로젝트 조작은 OpenCV `Controls` 창에�
 | `D` | yaw 오른쪽으로 1도 조정 |
 | `Space` | 고무줄 발사 |
 | `P` | Aim Camera 창 켜기/끄기 |
+| `O` | YOLO bbox 기반 조준 보정 모델을 한 번 적용 |
 | `Esc` | 종료 |
 | `F` | 타겟을 월드 `+Y` 방향으로 이동 |
 | `H` | 타겟을 월드 `-Y` 방향으로 이동 |
@@ -261,6 +262,43 @@ YOLO_INFER_EVERY_N_FRAMES = 3
 
 모델 출력 shape는 현재 `(1, 5, 8400)` 구조로 확인되어 있습니다.  
 클래스는 `target` 하나입니다.
+
+## 조준 보정 모델
+
+5cm 전체 테이블 데이터셋으로 첫 조준 보정 회귀 모델을 학습했습니다.  
+모델은 YOLO bbox feature와 현재 yaw/pitch를 입력으로 받아 현재 포신 방향에서 목표를 맞추기 위해 얼마나 움직여야 하는지 예측합니다.
+
+모델 파일:
+
+```text
+models/aim_delta_ridge_5cm.npz
+```
+
+학습/분석 스크립트:
+
+```powershell
+.\.venv\Scripts\python.exe analyze_aim_dataset.py
+.\.venv\Scripts\python.exe train_aim_delta_model.py
+```
+
+사용 feature:
+
+- `norm_err_x`, `norm_err_y`
+- `bbox_w_norm`, `bbox_h_norm`, `bbox_area_norm`
+- `bbox_conf`
+- `current_yaw_rad`, `current_pitch_rad`
+- 위 feature들의 2차항과 상호작용항
+
+검증 성능:
+
+```text
+yaw RMSE:   약 0.834 deg
+pitch RMSE: 약 1.090 deg
+both axes within 1 deg: 약 64.28%
+```
+
+`view_world.py`에서는 OpenCV `Controls` 창에 포커스를 둔 상태에서 `O`를 누르면 최신 YOLO bbox 기준으로 예측된 `delta_yaw`, `delta_pitch`를 한 번 적용합니다.  
+발사는 여전히 `Space`로 직접 실행합니다.
 
 ## 조준 데이터 수집
 
@@ -407,8 +445,10 @@ header count: 1
 - 데이터 수집 benchmark로 시간 추정 완료
 - 데이터 수집 진행 상황이 CSV와 로그에 바로 남도록 flush 처리 추가
 - 5cm 간격 전체 테이블 병렬 데이터 수집 완료
+- 5cm 데이터 기반 ridge 회귀 조준 보정 모델 학습 완료
+- `O` 키로 YOLO bbox 기반 1회 자동 조준 보정 적용 가능
 
 ## 앞으로의 핵심 방향
 
-다음 단계는 수집된 `datasets/aim_training_data_5cm.csv`를 분석하고 정제한 뒤, bbox feature에서 `delta_yaw`, `delta_pitch`를 예측하는 회귀 모델을 학습하는 것입니다.  
-이 모델을 `view_world.py`에 연결하면 YOLO가 타겟을 검출한 뒤 자동으로 보정 각도를 적용하고, 타겟을 향해 발사하는 구조로 발전시킬 수 있습니다.
+다음 단계는 현재 ridge 회귀 모델의 실제 명중률을 `view_world.py`에서 테스트하고, 부족하면 데이터 정제나 더 강한 모델로 개선하는 것입니다.  
+모델 보정이 안정적으로 맞기 시작하면 YOLO 검출, 자동 보정, 발사를 하나의 자동 루프로 연결할 수 있습니다.

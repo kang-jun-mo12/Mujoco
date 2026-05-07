@@ -77,6 +77,14 @@
 - 수집 시간은 약 `3시간 49분`이 걸렸습니다.
 - `datasets/` 폴더는 생성 데이터이므로 GitHub에는 올리지 않도록 `.gitignore`에 포함되어 있습니다.
 
+### 1.10 조준 보정 모델 학습 및 연결
+
+- `analyze_aim_dataset.py`로 5cm 데이터셋 품질 리포트를 생성했습니다.
+- `train_aim_delta_model.py`로 ridge regression 기반 조준 보정 모델을 학습했습니다.
+- 모델 파일은 `models/aim_delta_ridge_5cm.npz`입니다.
+- 검증 성능은 yaw RMSE 약 `0.834도`, pitch RMSE 약 `1.090도`입니다.
+- `view_world.py`에 `O` 키를 추가해 최신 YOLO bbox 기준 1회 자동 보정을 적용할 수 있게 했습니다.
+
 ## 2. 현재 프로젝트 상태
 
 현재 프로젝트는 수동 조작, YOLO 타겟 검출, 자동 데이터 수집의 기반이 모두 연결된 상태입니다.
@@ -84,7 +92,7 @@
 사용자는 `view_world.py`를 실행해서 회의실 안의 고무줄 발사대를 직접 조작할 수 있습니다.  
 `P`를 누르면 포신에 달린 Aim Camera 화면이 뜨고, YOLO가 타겟을 검출합니다.  
 `collect_aim_dataset.py`를 실행하면 여러 타겟 위치와 여러 현재 조준 상태에 대해 자동 조준 학습용 CSV를 만들 수 있습니다.  
-현재는 5cm 간격 전체 테이블 데이터셋이 로컬 `datasets/aim_training_data_5cm.csv`에 생성되어 있습니다.
+현재는 5cm 간격 전체 테이블 데이터셋이 로컬 `datasets/aim_training_data_5cm.csv`에 생성되어 있고, 첫 조준 보정 모델이 `models/aim_delta_ridge_5cm.npz`에 저장되어 있습니다.
 
 ## 3. 현재 남은 핵심 문제
 
@@ -117,9 +125,9 @@
 - search 범위와 step 최적화
 - 이미 계산한 위치의 hit angle 캐싱
 
-### 3.4 조준 회귀 모델 학습
+### 3.4 조준 회귀 모델 개선
 
-CSV가 충분히 쌓이면 다음 feature를 입력으로 사용합니다.
+현재 첫 모델은 ridge regression입니다. 다음 feature를 입력으로 사용합니다.
 
 - bbox 중심 위치
 - bbox 크기
@@ -132,12 +140,12 @@ CSV가 충분히 쌓이면 다음 feature를 입력으로 사용합니다.
 - `delta_yaw`
 - `delta_pitch`
 
-처음에는 간단한 모델부터 시작하는 것이 좋습니다.
+개선 후보:
 
-- Linear Regression
 - RandomForestRegressor
 - XGBoost 또는 LightGBM
 - 작은 MLP
+- 현재 예측 후 실제 발사 명중 여부를 다시 데이터로 기록하는 보정 루프
 
 ### 3.5 자동 조준/발사 연결
 
@@ -155,13 +163,13 @@ CSV가 충분히 쌓이면 다음 feature를 입력으로 사용합니다.
 
 ## 4. 다음 작업 추천 순서
 
-1. `datasets/aim_training_data_5cm.csv`의 bbox/confidence/보정각 분포를 분석합니다.
-2. launcher 주변 제외 기준과 이상치 제거 기준을 정합니다.
-3. 정제된 학습 CSV를 새로 저장합니다.
-4. `delta_yaw`, `delta_pitch` 회귀 모델을 학습합니다.
-5. 학습 모델을 저장합니다.
-6. `view_world.py`에 자동 조준 모드를 추가합니다.
-7. YOLO 검출 후 자동 보정과 발사를 테스트합니다.
+1. `view_world.py`에서 `P`로 Aim Camera를 켜고 YOLO 검출을 확인합니다.
+2. `O` 키로 1회 자동 보정을 적용한 뒤 `Space`로 발사해 실제 명중률을 확인합니다.
+3. 여러 위치에서 예측 보정 후 명중/실패를 기록합니다.
+4. launcher 주변 제외 기준과 이상치 제거 기준을 정합니다.
+5. 필요하면 정제된 학습 CSV를 새로 저장합니다.
+6. ridge regression보다 강한 모델을 학습합니다.
+7. 자동 보정이 안정되면 YOLO 검출, 보정, 발사를 하나의 자동 루프로 연결합니다.
 8. 실제 데이터와 MuJoCo 데이터 간 차이를 비교합니다.
 9. 필요하면 MuJoCo 월드 색감, 타겟 크기, 카메라 후처리를 더 조정합니다.
 
