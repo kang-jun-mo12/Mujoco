@@ -117,6 +117,18 @@
       <geom name="target_round_head" type="sphere" pos="0 0 0.108" size="0.036" material="target_mat"/>
     </body>
 
+    <body name="hit_effect" mocap="true" pos="0 0 -10">
+      <geom name="hit_particle_0" type="sphere" pos="0 0 0" size="0.015" rgba="1 0.95 0.05 0" contype="0" conaffinity="0"/>
+      <geom name="hit_particle_1" type="sphere" pos="0 0 0" size="0.012" rgba="1 0.55 0.05 0" contype="0" conaffinity="0"/>
+      <geom name="hit_particle_2" type="sphere" pos="0 0 0" size="0.012" rgba="1 0.85 0.15 0" contype="0" conaffinity="0"/>
+      <geom name="hit_particle_3" type="sphere" pos="0 0 0" size="0.011" rgba="1 0.35 0.05 0" contype="0" conaffinity="0"/>
+      <geom name="hit_particle_4" type="sphere" pos="0 0 0" size="0.011" rgba="1 0.95 0.25 0" contype="0" conaffinity="0"/>
+      <geom name="hit_particle_5" type="sphere" pos="0 0 0" size="0.010" rgba="1 0.55 0.05 0" contype="0" conaffinity="0"/>
+      <geom name="hit_particle_6" type="sphere" pos="0 0 0" size="0.010" rgba="1 0.85 0.10 0" contype="0" conaffinity="0"/>
+      <geom name="hit_particle_7" type="sphere" pos="0 0 0" size="0.009" rgba="1 0.40 0.05 0" contype="0" conaffinity="0"/>
+      <geom name="hit_particle_8" type="sphere" pos="0 0 0" size="0.009" rgba="1 0.95 0.05 0" contype="0" conaffinity="0"/>
+    </body>
+
     <body name="chair_left_1" pos="-1.9 1.35 0.43">
       <geom name="chair_left_1_seat" type="box" size="0.25 0.25 0.045" material="chair_dark"/>
       <geom name="chair_left_1_back" type="box" pos="0 0.16 0.31" size="0.27 0.045 0.31" material="chair_dark"/>

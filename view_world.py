@@ -6,7 +6,7 @@ Focus the "Controls" OpenCV window for keyboard input:
   A/D     - Yaw left/right
   Space   - Fire rubber band
   P       - Toggle aim-camera window
-  O       - Apply one YOLO-to-aim model correction
+  O       - Run iterative YOLO-to-aim correction
   Esc     - Quit
 
 The MuJoCo viewer is intentionally view-only.
@@ -39,9 +39,14 @@ YOLO_NMS_THRESHOLD = 0.45
 YOLO_INFER_EVERY_N_FRAMES = 3
 VIEW_MOVE_STEP = 0.20
 TARGET_MOVE_STEP = 0.01
+AUTO_AIM_ITERATIONS = 6
+AUTO_AIM_SETTLE_STEPS = 25
+AUTO_AIM_MIN_DELTA_DEG = 0.25
 FIRST_BOUNCE_HORIZONTAL_SCALE = 0.65
 FIRST_BOUNCE_VERTICAL_SCALE = 0.25
 FIRST_BOUNCE_ANGULAR_SCALE = 0.25
+HIT_EFFECT_DURATION = 0.75
+HIT_EFFECT_RADIUS = 0.18
 CAMERA_EXPOSURE = 0.96
 CAMERA_BRIGHTNESS = 2.0
 BLOOM_THRESHOLD = 210
@@ -95,7 +100,24 @@ aim_cam_id = cid("aim_camera")
 target_bid = bid("target_object")
 target_mocap_id = model.body_mocapid[target_bid]
 rubber_geom_ids = {gid("rb_1"), gid("rb_2"), gid("rb_3"), gid("rb_4")}
+target_geom_ids = {gid("target_base_rect"), gid("target_stem"), gid("target_round_head")}
 bounce_surface_ids = {gid("floor"), gid("long_table_top")}
+hit_effect_bid = bid("hit_effect")
+hit_effect_mocap_id = model.body_mocapid[hit_effect_bid]
+hit_particle_geom_ids = [gid(f"hit_particle_{i}") for i in range(9)]
+hit_particle_dirs = np.array([
+    [0.00, 0.00, 1.00],
+    [0.00, 1.00, 0.05],
+    [0.00, -1.00, 0.05],
+    [0.00, 0.72, 0.72],
+    [0.00, -0.72, 0.72],
+    [0.18, 0.55, 0.82],
+    [0.18, -0.55, 0.82],
+    [-0.18, 0.55, -0.18],
+    [-0.18, -0.55, -0.18],
+], dtype=float)
+hit_particle_dirs /= np.linalg.norm(hit_particle_dirs, axis=1, keepdims=True)
+hit_particle_base_rgba = model.geom_rgba[hit_particle_geom_ids].copy()
 
 yaw_target = 0.0
 pitch_target = 0.0
@@ -109,9 +131,15 @@ yolo_center_error = None
 last_yolo_detection = None
 aim_delta_model = None
 aim_model_status = "manual"
+auto_aim_requested = False
 bounce_contact_count = 0
 bounce_contact_active = False
 projectile_stopped_on_surface = False
+target_contact_active = False
+hit_effect_start_time = -1.0
+hit_count = 0
+hit_status = "waiting"
+hit_status_until = 0.0
 
 data_lock = threading.RLock()
 quit_event = threading.Event()
@@ -136,7 +164,7 @@ def place_projectile_at_muzzle():
 
 
 def do_fire():
-    global bounce_contact_active, bounce_contact_count, fire_count, projectile_stopped_on_surface
+    global bounce_contact_active, bounce_contact_count, fire_count, projectile_stopped_on_surface, target_contact_active
 
     pos, x_dir = muzzle_pose()
     qa = model.jnt_qposadr[rubber_jid]
@@ -149,7 +177,19 @@ def do_fire():
     bounce_contact_count = 0
     bounce_contact_active = False
     projectile_stopped_on_surface = False
+    target_contact_active = False
     fire_count += 1
+
+
+def projectile_target_contact():
+    for i in range(data.ncon):
+        geom1 = data.contact[i].geom1
+        geom2 = data.contact[i].geom2
+        if geom1 in rubber_geom_ids and geom2 in target_geom_ids:
+            return True, data.contact[i].pos.copy()
+        if geom2 in rubber_geom_ids and geom1 in target_geom_ids:
+            return True, data.contact[i].pos.copy()
+    return False, None
 
 
 def projectile_touching_bounce_surface():
@@ -196,6 +236,63 @@ def update_projectile_bounce_limit():
     bounce_contact_active = touching
 
 
+def hide_hit_effect():
+    global hit_effect_start_time
+
+    hit_effect_start_time = -1.0
+    data.mocap_pos[hit_effect_mocap_id] = [0, 0, -10]
+    for i, geom_id in enumerate(hit_particle_geom_ids):
+        model.geom_pos[geom_id] = 0
+        rgba = hit_particle_base_rgba[i].copy()
+        rgba[3] = 0
+        model.geom_rgba[geom_id] = rgba
+    mujoco.mj_forward(model, data)
+
+
+def trigger_hit_effect(hit_pos):
+    global hit_count, hit_effect_start_time, hit_status, hit_status_until
+
+    data.mocap_pos[hit_effect_mocap_id] = hit_pos
+    hit_effect_start_time = time.time()
+    hit_count += 1
+    hit_status = f"HIT! #{hit_count}"
+    hit_status_until = hit_effect_start_time + 1.25
+    for i, geom_id in enumerate(hit_particle_geom_ids):
+        model.geom_pos[geom_id] = 0
+        rgba = hit_particle_base_rgba[i].copy()
+        rgba[3] = 1.0
+        model.geom_rgba[geom_id] = rgba
+
+
+def update_target_hit_detection():
+    global target_contact_active
+
+    touching, hit_pos = projectile_target_contact()
+    if touching and not target_contact_active:
+        trigger_hit_effect(hit_pos)
+    target_contact_active = touching
+
+
+def update_hit_effect_visual():
+    if hit_effect_start_time < 0:
+        return
+
+    age = time.time() - hit_effect_start_time
+    if age > HIT_EFFECT_DURATION:
+        hide_hit_effect()
+        return
+
+    t = np.clip(age / HIT_EFFECT_DURATION, 0.0, 1.0)
+    radius = HIT_EFFECT_RADIUS * (1.0 - (1.0 - t) * (1.0 - t))
+    alpha = (1.0 - t) * (1.0 - t)
+    for i, geom_id in enumerate(hit_particle_geom_ids):
+        model.geom_pos[geom_id] = hit_particle_dirs[i] * radius
+        rgba = hit_particle_base_rgba[i].copy()
+        rgba[3] = alpha
+        model.geom_rgba[geom_id] = rgba
+    mujoco.mj_forward(model, data)
+
+
 def load_aim_delta_model_once():
     global aim_delta_model, aim_model_status
     if aim_delta_model is not None:
@@ -210,19 +307,18 @@ def load_aim_delta_model_once():
     return aim_delta_model
 
 
-def apply_auto_aim_once():
+def apply_auto_aim_delta_from_detection(detection):
     global aim_model_status, pitch_target, yaw_target
 
     model_obj = load_aim_delta_model_once()
     if model_obj is None:
-        return
-    if last_yolo_detection is None:
-        aim_model_status = "no YOLO target"
-        return
+        return None
+    if detection is None:
+        return None
 
     yaw_now = float(data.qpos[model.jnt_qposadr[yaw_jid]])
     pitch_now = float(data.qpos[model.jnt_qposadr[pitch_jid]])
-    delta_yaw, delta_pitch = model_obj.predict_detection(last_yolo_detection, yaw_now, pitch_now)
+    delta_yaw, delta_pitch = model_obj.predict_detection(detection, yaw_now, pitch_now)
 
     delta_yaw = float(np.clip(delta_yaw, np.deg2rad(-5), np.deg2rad(5)))
     delta_pitch = float(np.clip(delta_pitch, np.deg2rad(-4), np.deg2rad(4)))
@@ -231,6 +327,102 @@ def apply_auto_aim_once():
     data.ctrl[0] = yaw_target
     data.ctrl[1] = pitch_target
     aim_model_status = f"dyaw {np.rad2deg(delta_yaw):+.2f} dpitch {np.rad2deg(delta_pitch):+.2f}"
+    return delta_yaw, delta_pitch
+
+
+def request_auto_aim():
+    global aim_model_status, auto_aim_requested
+    auto_aim_requested = True
+    aim_model_status = "auto aim queued"
+
+
+def render_aim_bgr(renderer):
+    with data_lock:
+        data.mocap_pos[target_mocap_id] = target_pos
+        renderer.update_scene(data, camera=aim_cam_id)
+        rgb = renderer.render()
+    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    return apply_webcam_room_look(bgr)
+
+
+def settle_aim_control():
+    with data_lock:
+        data.mocap_pos[target_mocap_id] = target_pos
+        for _ in range(AUTO_AIM_SETTLE_STEPS):
+            mujoco.mj_step(model, data)
+            update_projectile_bounce_limit()
+            update_target_hit_detection()
+        mujoco.mj_forward(model, data)
+
+
+def run_auto_aim_sequence(renderer, yolo_net):
+    global aim_model_status, auto_aim_requested
+
+    auto_aim_requested = False
+    if load_aim_delta_model_once() is None:
+        return None, []
+
+    latest_bgr = None
+    latest_detections = []
+    total_yaw = 0.0
+    total_pitch = 0.0
+    used_iterations = 0
+    min_delta = np.deg2rad(AUTO_AIM_MIN_DELTA_DEG)
+
+    for iteration in range(AUTO_AIM_ITERATIONS):
+        latest_bgr = render_aim_bgr(renderer)
+        latest_detections = run_yolo_inference(yolo_net, latest_bgr)
+        best = best_detection(latest_detections)
+        if best is None:
+            set_yolo_status("no target", [])
+            aim_model_status = f"auto stop {iteration}: no target"
+            break
+
+        with data_lock:
+            result = apply_auto_aim_delta_from_detection(best)
+        if result is None:
+            break
+
+        delta_yaw, delta_pitch = result
+        total_yaw += delta_yaw
+        total_pitch += delta_pitch
+        used_iterations += 1
+        set_yolo_status(f"{len(latest_detections)} target", latest_detections, None, best)
+
+        if abs(delta_yaw) < min_delta and abs(delta_pitch) < min_delta:
+            aim_model_status = (
+                f"auto done {used_iterations}: "
+                f"{np.rad2deg(total_yaw):+.2f}, {np.rad2deg(total_pitch):+.2f}"
+            )
+            break
+
+        settle_aim_control()
+    else:
+        aim_model_status = (
+            f"auto max {used_iterations}: "
+            f"{np.rad2deg(total_yaw):+.2f}, {np.rad2deg(total_pitch):+.2f}"
+        )
+
+    latest_bgr = render_aim_bgr(renderer)
+    latest_detections = run_yolo_inference(yolo_net, latest_bgr)
+    best = best_detection(latest_detections)
+    final_error = None
+    if best is not None:
+        x1, y1, x2, y2 = best["box"]
+        final_error = ((x1 + x2) / 2 - CAMERA_WIDTH / 2, (y1 + y2) / 2 - CAMERA_HEIGHT / 2)
+    set_yolo_status(
+        f"{len(latest_detections)} target" if latest_detections else "no target",
+        latest_detections,
+        final_error,
+        best,
+    )
+    return latest_bgr, latest_detections
+
+
+def reject_auto_aim_without_camera():
+    global aim_model_status, auto_aim_requested
+    auto_aim_requested = False
+    aim_model_status = "turn Aim Camera on"
 
 
 def handle_key(raw_key):
@@ -272,7 +464,7 @@ def handle_key(raw_key):
         elif key == KEY_L:
             viewer_lookat[1] -= VIEW_MOVE_STEP
         elif key == KEY_O:
-            apply_auto_aim_once()
+            request_auto_aim()
         elif key == KEY_SPACE:
             do_fire()
         elif key == KEY_P:
@@ -291,13 +483,14 @@ def draw_control_panel():
         target_x, target_y, target_z = target_pos
         yolo_text = yolo_status
         aim_text = aim_model_status
+        hit_text = hit_status if time.time() < hit_status_until else f"{hit_count} hits"
         if yolo_center_error is not None:
             err_x, err_y = yolo_center_error
             yolo_text = f"{yolo_status} dx {err_x:+.0f} dy {err_y:+.0f}"
         shots = fire_count
         camera_on = show_cam
 
-    img = np.full((356, 480, 3), (28, 30, 34), dtype=np.uint8)
+    img = np.full((390, 480, 3), (28, 30, 34), dtype=np.uint8)
     lines = [
         "Controls window focused",
         f"Yaw:   {yaw_deg:+7.1f} deg  target {target_yaw_deg:+7.1f}",
@@ -306,6 +499,7 @@ def draw_control_panel():
         f"Target:x {target_x:+5.2f} y {target_y:+5.2f} z {target_z:+5.2f}",
         f"YOLO:  {yolo_text}",
         f"Aim:   {aim_text}",
+        f"Hit:   {hit_text}",
         f"Shots: {shots}",
         f"Aim camera: {'ON' if camera_on else 'OFF'}",
     ]
@@ -321,6 +515,8 @@ def draw_aim_hud(img):
         yaw_deg = np.rad2deg(data.qpos[model.jnt_qposadr[yaw_jid]])
         pitch_deg = np.rad2deg(data.qpos[model.jnt_qposadr[pitch_jid]])
         shots = fire_count
+        show_hit = time.time() < hit_status_until
+        hit_text = hit_status
 
     lines = [
         f"Yaw:   {yaw_deg:+.1f} deg",
@@ -329,6 +525,8 @@ def draw_aim_hud(img):
     ]
     for i, txt in enumerate(lines):
         cv2.putText(img, txt, (10, 24 + i * 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1, cv2.LINE_AA)
+    if show_hit:
+        cv2.putText(img, hit_text, (CAMERA_WIDTH // 2 - 58, 72), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 240, 255), 3, cv2.LINE_AA)
     return img
 
 
@@ -485,7 +683,7 @@ def ui_thread_fn():
     control_win = "Controls"
     aim_win = "Aim Camera"
     cv2.namedWindow(control_win, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(control_win, 480, 356)
+    cv2.resizeWindow(control_win, 480, 390)
 
     while not quit_event.is_set():
         t0 = time.time()
@@ -505,6 +703,18 @@ def ui_thread_fn():
             bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
             bgr = apply_webcam_room_look(bgr)
             frame_index += 1
+            if auto_aim_requested:
+                try:
+                    if yolo_net is None:
+                        yolo_net = load_yolo_net()
+                    auto_bgr, auto_detections = run_auto_aim_sequence(renderer, yolo_net)
+                    if auto_bgr is not None:
+                        bgr = auto_bgr
+                        yolo_detections = auto_detections
+                        frame_index = 0
+                except Exception as exc:
+                    yolo_detections = []
+                    set_yolo_status(f"error: {type(exc).__name__}", [])
             if frame_index % YOLO_INFER_EVERY_N_FRAMES == 0:
                 try:
                     if yolo_net is None:
@@ -520,6 +730,8 @@ def ui_thread_fn():
                 set_yolo_status(f"{len(yolo_detections)} target", yolo_detections, center_error, best)
             cv2.imshow(aim_win, draw_aim_hud(bgr))
         else:
+            if auto_aim_requested:
+                reject_auto_aim_without_camera()
             set_yolo_status("idle", [])
             try:
                 if cv2.getWindowProperty(aim_win, cv2.WND_PROP_VISIBLE) >= 1:
@@ -540,6 +752,7 @@ with data_lock:
     data.mocap_pos[target_mocap_id] = target_pos
     mujoco.mj_forward(model, data)
     place_projectile_at_muzzle()
+    hide_hit_effect()
 
 threading.Thread(target=ui_thread_fn, daemon=True).start()
 
@@ -559,6 +772,8 @@ with mujoco.viewer.launch_passive(model, data) as viewer:
             for _ in range(sim_steps_per_frame):
                 mujoco.mj_step(model, data)
                 update_projectile_bounce_limit()
+                update_target_hit_detection()
+            update_hit_effect_visual()
         viewer.sync()
         elapsed = time.time() - t0
         budget = 1.0 / TARGET_FPS

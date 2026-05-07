@@ -141,7 +141,7 @@ viewer는 보기 전용이며, 프로젝트 조작은 OpenCV `Controls` 창에�
 | `D` | yaw 오른쪽으로 1도 조정 |
 | `Space` | 고무줄 발사 |
 | `P` | Aim Camera 창 켜기/끄기 |
-| `O` | YOLO bbox 기반 조준 보정 모델을 한 번 적용 |
+| `O` | YOLO bbox 기반 조준 보정 모델을 내부 반복으로 적용 |
 | `Esc` | 종료 |
 | `F` | 타겟을 월드 `+Y` 방향으로 이동 |
 | `H` | 타겟을 월드 `-Y` 방향으로 이동 |
@@ -210,6 +210,13 @@ FIRST_BOUNCE_HORIZONTAL_SCALE = 0.65
 FIRST_BOUNCE_VERTICAL_SCALE = 0.25
 FIRST_BOUNCE_ANGULAR_SCALE = 0.25
 ```
+
+## 명중 시각 효과
+
+고무줄이 타겟 geom에 실제로 충돌하면 `hit_effect` mocap body가 충돌 위치로 이동하고, 숨겨져 있던 `hit_particle_0` ~ `hit_particle_8` sphere들이 짧게 퍼지는 파티클 효과를 냅니다.  
+동시에 Aim Camera 화면에는 `HIT!` 텍스트가 잠깐 표시되고, `Controls` 창에는 누적 hit count가 표시됩니다.
+
+명중 판정은 고무줄 geom인 `rb_1` ~ `rb_4`와 타겟 geom인 `target_base_rect`, `target_stem`, `target_round_head`의 contact를 기준으로 합니다.
 
 ## 타겟 오브젝트
 
@@ -297,7 +304,8 @@ pitch RMSE: 약 1.090 deg
 both axes within 1 deg: 약 64.28%
 ```
 
-`view_world.py`에서는 OpenCV `Controls` 창에 포커스를 둔 상태에서 `O`를 누르면 최신 YOLO bbox 기준으로 예측된 `delta_yaw`, `delta_pitch`를 한 번 적용합니다.  
+`view_world.py`에서는 OpenCV `Controls` 창에 포커스를 둔 상태에서 `O`를 누르면 Aim Camera를 다시 렌더링하면서 최대 6번까지 `YOLO 검출 -> 보정 예측 -> 조향 안정화`를 반복합니다.  
+따라서 처음 조준이 많이 틀어져 있어도 `O`를 여러 번 직접 누르지 않고 한 번의 입력으로 목표 각도에 더 가까이 이동합니다.  
 발사는 여전히 `Space`로 직접 실행합니다.
 
 ## 조준 데이터 수집
@@ -446,7 +454,8 @@ header count: 1
 - 데이터 수집 진행 상황이 CSV와 로그에 바로 남도록 flush 처리 추가
 - 5cm 간격 전체 테이블 병렬 데이터 수집 완료
 - 5cm 데이터 기반 ridge 회귀 조준 보정 모델 학습 완료
-- `O` 키로 YOLO bbox 기반 1회 자동 조준 보정 적용 가능
+- `O` 키로 YOLO bbox 기반 반복 자동 조준 보정 적용 가능
+- 타겟 명중 시 MuJoCo 파티클 효과와 Aim Camera `HIT!` 표시 가능
 
 ## 앞으로의 핵심 방향
 

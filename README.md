@@ -20,7 +20,7 @@ Use the OpenCV `Controls` window for keyboard input.
 | `A/D` | Yaw left/right by 1 degree |
 | `Space` | Fire rubber band |
 | `P` | Toggle aim camera |
-| `O` | Apply one YOLO-to-aim model correction |
+| `O` | Run iterative YOLO-to-aim correction |
 | `F/H` | Move target left/right |
 | `T/G` | Move target toward screen/launcher |
 | `I/J/K/L` | Move viewer lookat |
@@ -59,4 +59,4 @@ Analyze the collected 5cm dataset and train the first aim-delta regression model
 .\.venv\Scripts\python.exe train_aim_delta_model.py
 ```
 
-The trained model is saved to `models/aim_delta_ridge_5cm.npz`. In `view_world.py`, press `O` in the OpenCV `Controls` window to apply one predicted correction from the latest YOLO target bbox.
+The trained model is saved to `models/aim_delta_ridge_5cm.npz`. In `view_world.py`, press `O` in the OpenCV `Controls` window to run several YOLO-to-aim correction iterations from the latest aim-camera view.

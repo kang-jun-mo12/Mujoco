@@ -83,7 +83,15 @@
 - `train_aim_delta_model.py`로 ridge regression 기반 조준 보정 모델을 학습했습니다.
 - 모델 파일은 `models/aim_delta_ridge_5cm.npz`입니다.
 - 검증 성능은 yaw RMSE 약 `0.834도`, pitch RMSE 약 `1.090도`입니다.
-- `view_world.py`에 `O` 키를 추가해 최신 YOLO bbox 기준 1회 자동 보정을 적용할 수 있게 했습니다.
+- `view_world.py`에 `O` 키를 추가해 최신 YOLO bbox 기준 반복 자동 보정을 적용할 수 있게 했습니다.
+
+### 1.11 명중 시각 효과 추가
+
+- 고무줄 geom과 타겟 geom이 contact되면 hit로 판정합니다.
+- hit 순간 `hit_effect` mocap body가 충돌 위치로 이동합니다.
+- `hit_particle_0` ~ `hit_particle_8` sphere가 짧게 퍼지며 파티클 효과를 냅니다.
+- Aim Camera 화면에는 `HIT!` 텍스트가 잠깐 표시됩니다.
+- Controls 창에는 누적 hit count가 표시됩니다.
 
 ## 2. 현재 프로젝트 상태
 
@@ -164,7 +172,7 @@
 ## 4. 다음 작업 추천 순서
 
 1. `view_world.py`에서 `P`로 Aim Camera를 켜고 YOLO 검출을 확인합니다.
-2. `O` 키로 1회 자동 보정을 적용한 뒤 `Space`로 발사해 실제 명중률을 확인합니다.
+2. `O` 키로 반복 자동 보정을 적용한 뒤 `Space`로 발사해 실제 명중률과 hit 효과를 확인합니다.
 3. 여러 위치에서 예측 보정 후 명중/실패를 기록합니다.
 4. launcher 주변 제외 기준과 이상치 제거 기준을 정합니다.
 5. 필요하면 정제된 학습 CSV를 새로 저장합니다.
