@@ -618,7 +618,6 @@ def best_detection(detections):
 
 def draw_yolo_detections(img, detections, class_names):
     h, w = img.shape[:2]
-    cv2.drawMarker(img, (w // 2, h // 2), (255, 255, 255), cv2.MARKER_CROSS, 16, 1, cv2.LINE_AA)
 
     best = best_detection(detections)
     for det in detections:
@@ -637,9 +636,6 @@ def draw_yolo_detections(img, detections, class_names):
     cy = (y1 + y2) / 2
     err_x = cx - w / 2
     err_y = cy - h / 2
-    cv2.circle(img, (int(cx), int(cy)), 4, (0, 255, 255), -1, cv2.LINE_AA)
-    cv2.line(img, (w // 2, h // 2), (int(cx), int(cy)), (0, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(img, f"err {err_x:+.0f}, {err_y:+.0f}", (10, h - 16), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1, cv2.LINE_AA)
     return (err_x, err_y), best
 
 
