@@ -6,7 +6,7 @@ Focus the "Controls" OpenCV window for keyboard input:
   A/D     - Yaw left/right
   Space   - Fire rubber band
   P       - Toggle aim-camera window
-  O       - Run iterative YOLO-to-aim correction
+  O       - Run iterative YOLO-to-aim correction and fire once
   Esc     - Quit
 
 The MuJoCo viewer is intentionally view-only.
@@ -416,6 +416,16 @@ def run_auto_aim_sequence(renderer, yolo_net):
         final_error,
         best,
     )
+    if used_iterations > 0 and best is not None:
+        settle_aim_control()
+        with data_lock:
+            do_fire()
+        aim_model_status = (
+            f"auto fired {used_iterations}: "
+            f"{np.rad2deg(total_yaw):+.2f}, {np.rad2deg(total_pitch):+.2f}"
+        )
+    elif used_iterations > 0:
+        aim_model_status = "auto done: no final target"
     return latest_bgr, latest_detections
 
 
