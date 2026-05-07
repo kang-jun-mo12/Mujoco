@@ -1,9 +1,8 @@
-# MuJoCo 고무줄 발사대 프로젝트 설명
+# MuJoCo 고무줄 발사대 프로젝트 전체 설명
 
-이 프로젝트는 MuJoCo 안에 회의실 환경을 만들고, 긴 회의 테이블 위에 2축 고무줄 발사대를 배치한 시뮬레이션입니다.  
-포신에 달린 `aim_camera` 화면을 OpenCV 창으로 확인하고, 실제 환경 데이터로 학습한 YOLO 모델을 이용해 MuJoCo 안의 타겟을 검출합니다.
+이 프로젝트는 MuJoCo 안에 회의실 환경을 만들고, 긴 회의 테이블 위에 2축 고무줄 발사대를 배치한 시뮬레이션입니다. 포신에 달린 `aim_camera` 화면을 OpenCV 창으로 확인하고, 실제 환경 데이터로 학습한 YOLO 모델을 이용해 MuJoCo 안의 타겟을 검출합니다.
 
-현재 목표는 YOLO가 본 타겟의 바운딩박스 정보로부터 발사대가 얼마나 yaw/pitch를 보정해야 하는지 학습 데이터를 만들고, 이후 자동 조준과 발사까지 연결하는 것입니다.
+현재는 YOLO bbox 정보를 이용해 발사대의 yaw/pitch 보정량을 예측하고, `O` 키를 누르면 자동 조준 보정 후 고무줄을 1회 발사하는 단계까지 구현되어 있습니다.
 
 ## 실행 환경
 
@@ -12,12 +11,12 @@
 - Python 가상환경: `.venv`
 - 주요 라이브러리:
   - `mujoco`
-  - `numpy`
   - `opencv-python`
+  - `numpy`
   - `gymnasium[mujoco]`
   - `matplotlib`
 
-기본 실행 명령:
+실행 명령:
 
 ```powershell
 cd C:\Users\DESKTOP\Desktop\mujoco
@@ -28,79 +27,59 @@ cd C:\Users\DESKTOP\Desktop\mujoco
 
 | 파일 | 역할 |
 | --- | --- |
-| `conference_room_with_launcher.xml` | 회의실 월드, 발사대, 고무줄, 이동식 타겟이 통합된 MuJoCo XML |
-| `view_world.py` | 메인 실행 스크립트, 조작/발사/카메라/YOLO 추론 담당 |
-| `collect_aim_dataset.py` | 타겟 위치별 YOLO bbox와 조준 보정량을 CSV로 수집하는 스크립트 |
-| `rubber_band_launcher.xml` | 기존 단독 고무줄 발사대 XML |
-| `test.py` | 기존 단독 발사대 실행 스크립트 |
-| `README.md` | 깃허브용 간단 실행 설명 |
-| `project_workflow.md` | 지금까지 한 작업과 앞으로 할 작업 흐름 정리 |
+| `conference_room_with_launcher.xml` | 회의실 월드, 발사대, 고무줄, 타겟, 명중 파티클 효과가 통합된 MuJoCo XML |
+| `view_world.py` | 메인 실행 스크립트, 조작/발사/카메라/YOLO/자동조준 담당 |
+| `aim_delta_model.py` | 조준 보정 모델 로드와 예측 함수 |
+| `models/aim_delta_ridge_5cm.npz` | 5cm 데이터셋으로 학습한 조준 보정 모델 |
+| `collect_aim_dataset.py` | 타겟 위치별 YOLO bbox와 조준 보정량을 CSV로 수집 |
+| `analyze_aim_dataset.py` | 수집 데이터 품질 리포트 생성 |
+| `train_aim_delta_model.py` | ridge regression 조준 보정 모델 학습 |
+| `reports/aim_dataset_quality_5cm.md` | 5cm 데이터셋 품질 리포트 |
+| `reports/aim_delta_model_5cm.md` | 조준 보정 모델 성능 리포트 |
 | `yolo_model/target_yolo11s_640_best.onnx` | Aim Camera 프레임에서 타겟을 검출하는 YOLO ONNX 모델 |
+| `README.md` | GitHub용 실행 안내 |
+| `project_workflow.md` | 지금까지 한 작업과 다음 작업 흐름 |
 
-## 회의실 월드 구조
-
-좌표계는 다음 기준으로 구성했습니다.
+## 월드 좌표계
 
 | 축 | 의미 |
 | --- | --- |
-| `+X` | 발사대가 바라보는 정면, 회의실 스크린 방향 |
+| `+X` | 발사대가 바라보는 정면, 스크린 방향 |
 | `+Y` | 테이블 좌우 방향 |
 | `+Z` | 위쪽 |
 
-월드에는 다음 구조물이 있습니다.
+회의실 월드에는 바닥, 긴 테이블, 좌우/정면 유리벽, 유리창 너머 배경, 정면 스크린, 천장 조명, 의자, 발사대, 타겟이 포함되어 있습니다.
 
-- 회의실 바닥
-- 긴 회의 테이블
-- 좌측/우측/정면 유리벽
-- 유리창 너머 푸른 외부 배경
-- 정면 검은 스크린
-- 천장과 직사각형 조명
-- 좌우 의자들
-- 테이블 위 고무줄 발사대
-- 테이블 위 이동식 타겟
+## 회의실과 테이블
 
-회의실은 실제 사진과 비슷한 카메라 분위기를 내기 위해 조명, 유리벽 색, 외부 배경색, 테이블 색을 여러 번 보정했습니다.
-
-## 테이블
-
-테이블은 `long_table` body 안의 `long_table_top` 단일 box geom으로 구현되어 있습니다.
+테이블은 `long_table_top` 단일 box geom으로 구현되어 있고, 전체가 평평한 상판입니다.
 
 ```xml
 <geom name="long_table_top" type="box" pos="0 0 0" size="3.6 0.9 0.045" material="table_mat"/>
 ```
 
-MuJoCo의 box `size`는 반쪽 길이이므로 실제 테이블 크기는 다음과 같습니다.
+MuJoCo box `size`는 반쪽 길이이므로 실제 테이블 범위는 다음과 같습니다.
 
-- X 방향 길이: `7.2m`
-- Y 방향 폭: `1.8m`
-- X 범위: `-3.0m ~ 4.2m`
-- Y 범위: `-0.9m ~ 0.9m`
+```text
+X 길이: 7.2m
+Y 폭: 1.8m
+X 범위: -3.0m ~ 4.2m
+Y 범위: -0.9m ~ 0.9m
+```
 
-테이블 중앙선과 가장자리처럼 위로 튀어나와 있던 부분은 제거했고, 현재는 전체가 평평한 하나의 상판입니다.  
-테이블 색은 Aim Camera 화면에서 `#C8A28D rgba(200, 162, 141, 1.00)`에 가깝게 보이도록 조명 반사를 고려해 XML material 값을 낮게 보정했습니다.
+테이블 색은 Aim Camera 화면 기준 `#C8A28D rgba(200, 162, 141, 1.00)`에 가깝게 보이도록 보정했습니다.
 
 ```xml
 <material name="table_mat" rgba="0.43 0.273 0.18 1" reflectance="0"/>
 ```
 
-## 유리벽과 외부 배경
-
-왼쪽, 오른쪽, 정면 벽은 유리 패널 구조로 맞췄습니다.  
-정면 스크린 뒤 벽도 좌우 유리벽과 같은 구조를 사용합니다.
-
-유리창 너머 색은 Aim Camera 화면 기준으로 `#6C8BAA rgba(108, 139, 170, 1.00)`에 가깝게 보이도록 보정했습니다.
-
-```xml
-<texture type="skybox" name="skybox" builtin="gradient" rgb1="0.22 0.27 0.25" rgb2="0.22 0.27 0.25"/>
-<material name="glass_mat" rgba="0.12 0.16 0.14 0.28" reflectance="0.02"/>
-<material name="outside_view_mat" rgba="0.22 0.27 0.25 1" reflectance="0"/>
-```
+좌우/정면 유리창 너머 배경은 Aim Camera 화면 기준 `#6C8BAA rgba(108, 139, 170, 1.00)`에 가깝게 보이도록 조정했습니다.
 
 ## 발사대 구조
 
-발사대는 회의 테이블의 `-X` 끝 중앙, `y=0`에 배치되어 있고, 포신은 월드 `+X` 방향인 스크린 방향을 바라봅니다.
+발사대는 테이블의 `-X` 끝 중앙, `y=0`에 배치되어 있고, 포신은 월드 `+X` 방향인 스크린 방향을 바라봅니다.
 
-반드시 유지해야 하는 이름들은 현재 XML에서 그대로 유지되어 있습니다.
+반드시 유지되는 이름:
 
 - `yaw_joint`
 - `pitch_joint`
@@ -110,77 +89,51 @@ MuJoCo의 box `size`는 반쪽 길이이므로 실제 테이블 크기는 다음
 - `muzzle_site`
 - `aim_camera`
 
-현재 actuator는 2개만 사용합니다.
+현재 actuator는 2개뿐입니다.
 
-| actuator | 연결 joint | 역할 |
+| actuator | joint | 역할 |
 | --- | --- | --- |
 | `yaw_motor` | `yaw_joint` | 좌우 조향 |
 | `pitch_motor` | `pitch_joint` | 상하 조향 |
 
-`trigger_joint`, `trigger_motor`, trigger actuator는 없습니다.  
-발사는 서보모터가 아니라 Python의 `do_fire()` 함수에서 같은 `rubber_projectile` body를 포구 위치로 재배치하고 포신 방향 속도를 주는 방식입니다.
+`trigger_joint`, `trigger_motor`, trigger actuator는 없습니다. 발사는 Python의 `do_fire()`가 `rubber_projectile`을 포구 위치로 재배치하고 포신 방향 속도를 주는 방식입니다.
 
-발사대 내부 geom끼리 충돌해서 yaw 회전이 막히지 않도록 launcher visual geom에는 내부 충돌 off 설정을 유지했습니다.
-
-```xml
-<default class="launcher_visual">
-  <geom contype="0" conaffinity="0"/>
-</default>
-```
+발사대 내부 geom끼리 충돌해서 yaw가 잠기지 않도록 launcher visual geom의 내부 충돌은 꺼두었습니다.
 
 ## 조작 방식
 
-MuJoCo viewer에는 프로젝트 키 입력을 직접 바인딩하지 않습니다.  
-viewer는 보기 전용이며, 프로젝트 조작은 OpenCV `Controls` 창에서 받습니다.
+MuJoCo viewer는 보기 전용입니다. 프로젝트 조작은 OpenCV `Controls` 창에서 받습니다.
 
 | 키 | 기능 |
 | --- | --- |
-| `W` | pitch 위로 1도 조정 |
-| `S` | pitch 아래로 1도 조정 |
-| `A` | yaw 왼쪽으로 1도 조정 |
-| `D` | yaw 오른쪽으로 1도 조정 |
-| `Space` | 고무줄 발사 |
+| `W/S` | pitch 위/아래 1도 조정 |
+| `A/D` | yaw 좌/우 1도 조정 |
+| `Space` | 고무줄 수동 발사 |
 | `P` | Aim Camera 창 켜기/끄기 |
-| `O` | YOLO bbox 기반 조준 보정을 내부 반복으로 적용한 뒤 1회 발사 |
+| `O` | YOLO bbox 기반 반복 자동 조준 후 고무줄 1회 발사 |
+| `F/H` | 타겟을 월드 `+Y/-Y` 방향으로 이동 |
+| `T/G` | 타겟을 스크린/발사대 방향으로 이동 |
+| `I/J/K/L` | viewer lookat 이동 |
 | `Esc` | 종료 |
-| `F` | 타겟을 월드 `+Y` 방향으로 이동 |
-| `H` | 타겟을 월드 `-Y` 방향으로 이동 |
-| `T` | 타겟을 스크린 방향, 월드 `+X` 방향으로 이동 |
-| `G` | 타겟을 발사대 방향, 월드 `-X` 방향으로 이동 |
-| `I` | viewer lookat을 월드 `+X` 방향으로 이동 |
-| `K` | viewer lookat을 월드 `-X` 방향으로 이동 |
-| `J` | viewer lookat을 월드 `+Y` 방향으로 이동 |
-| `L` | viewer lookat을 월드 `-Y` 방향으로 이동 |
 
-현재 조향 step:
+현재 step 값:
 
 ```python
 YAW_STEP = np.deg2rad(1)
 PITCH_STEP = np.deg2rad(1)
-```
-
-타겟 이동 step:
-
-```python
 TARGET_MOVE_STEP = 0.01
-```
-
-viewer 전지적 시점 이동 step:
-
-```python
 VIEW_MOVE_STEP = 0.20
 ```
 
 ## Aim Camera
 
-`aim_camera`는 포신 근처에 달린 실제 장치 카메라 역할입니다.  
-포신이 yaw/pitch로 움직이면 aim camera도 같이 움직입니다.
+`aim_camera`는 포신 근처에 달린 실제 장치 카메라 역할입니다. 포신이 움직이면 Aim Camera도 같이 움직입니다.
 
 ```xml
 <camera name="aim_camera" pos="0.30 0 -0.13" xyaxes="0 -1 0  0 0 1" fovy="76"/>
 ```
 
-현재 카메라 렌더링 사양:
+현재 사양:
 
 ```python
 CAMERA_WIDTH = 640
@@ -188,42 +141,11 @@ CAMERA_HEIGHT = 480
 TARGET_FPS = 30
 ```
 
-한때 `2592 x 1944`로 변경했지만, OpenCV 창 안정성과 처리 속도 문제 때문에 원래 사양인 `640 x 480`으로 되돌렸습니다.  
-Aim Camera 화면에는 yaw/pitch, fire_count, YOLO bbox, bbox 중심, 화면 중심 기준 오차가 overlay로 표시됩니다.
-
-## 고무줄 발사와 바운스
-
-고무줄은 `rubber_projectile` body 하나를 반복 재사용합니다.  
-`Space`를 누를 때마다 같은 body를 `muzzle_site` 위치로 옮기고 포신 방향으로 초기 속도를 줍니다.
-
-```python
-LAUNCH_SPEED = 12.0
-```
-
-고무줄 색은 노란색입니다.  
-`R` 재장전 기능은 제거되어 있고, `Space`를 누르면 매번 자동으로 재배치 후 발사합니다.
-
-바닥이나 테이블에 닿았을 때 여러 번 강하게 튀지 않도록 첫 충돌만 약하게 튀고, 두 번째 충돌부터는 멈추는 방식으로 제어합니다.
-
-```python
-FIRST_BOUNCE_HORIZONTAL_SCALE = 0.65
-FIRST_BOUNCE_VERTICAL_SCALE = 0.25
-FIRST_BOUNCE_ANGULAR_SCALE = 0.25
-```
-
-## 명중 시각 효과
-
-고무줄이 타겟 geom에 실제로 충돌하면 `hit_effect` mocap body가 충돌 위치로 이동하고, 숨겨져 있던 `hit_particle_0` ~ `hit_particle_8` sphere들이 짧게 퍼지는 파티클 효과를 냅니다.  
-동시에 Aim Camera 화면에는 `HIT!` 텍스트가 잠깐 표시되고, `Controls` 창에는 누적 hit count가 표시됩니다.
-
-명중 판정은 고무줄 geom인 `rb_1` ~ `rb_4`와 타겟 geom인 `target_base_rect`, `target_stem`, `target_round_head`의 contact를 기준으로 합니다.
+Aim Camera 화면에는 yaw/pitch, 발사 횟수, YOLO bbox와 label/confidence, 명중 시 `HIT!` 텍스트가 표시됩니다. 사용자가 요청해서 화면 중앙 에임포인트, bbox 중심점, 노란 연결선, 하단 err 텍스트는 제거했습니다. 내부 자동조준 계산에는 bbox 중심 오차값을 계속 사용합니다.
 
 ## 타겟 오브젝트
 
-타겟은 실제 사진에 있는 모양을 기준으로 만들었습니다.  
-아래 직사각형, 세로 막대, 위쪽 원형 머리로 구성되어 있습니다.
-
-현재 XML 구현:
+타겟은 실제 사진을 기준으로 아래 직사각형, 세로 막대, 위쪽 원형 머리 구조로 만들었습니다.
 
 ```xml
 <body name="target_object" mocap="true" pos="-1.20 0 0.805">
@@ -233,21 +155,40 @@ FIRST_BOUNCE_ANGULAR_SCALE = 0.25
 </body>
 ```
 
-타겟은 너무 작게 보였기 때문에 원래 규격보다 전체적으로 크게 만들었습니다.  
-색은 Aim Camera 기준 `#7A4F46 rgba(122, 79, 70, 1.00)`에 가깝게 보이도록 보정했습니다.
+색은 Aim Camera 기준 `#7A4F46 rgba(122, 79, 70, 1.00)`에 가깝게 보이도록 보정했습니다. 타겟은 `mocap="true"` body이며, Python에서 `data.mocap_pos`로 이동합니다.
 
-```xml
-<material name="target_mat" rgba="0.392 0.181 0.117 1" reflectance="0"/>
+## 고무줄 발사와 바운스
+
+고무줄은 `rubber_projectile` body 하나를 반복 재사용합니다. `Space`를 누르거나 `O` 자동 조준이 끝나면 `do_fire()`가 같은 body를 포구 위치로 옮기고 초기 속도를 줍니다.
+
+```python
+LAUNCH_SPEED = 12.0
 ```
 
-타겟은 `mocap="true"` body로 구현되어 있어 Python에서 `data.mocap_pos`를 바꿔 위치를 이동합니다.  
-고무줄과 충돌할 수 있도록 target geom의 collision은 꺼두지 않았습니다.
+`R` 재장전 키는 없습니다. `Space` 또는 `O` 발사 때마다 자동으로 재배치됩니다.
 
-## YOLO 추론
+첫 충돌은 약하게 튀고, 두 번째 충돌부터는 멈추도록 제어합니다.
 
-실제 환경에서 수집한 데이터로 학습한 YOLO 모델을 MuJoCo Aim Camera 프레임에 적용합니다.
+```python
+FIRST_BOUNCE_HORIZONTAL_SCALE = 0.65
+FIRST_BOUNCE_VERTICAL_SCALE = 0.25
+FIRST_BOUNCE_ANGULAR_SCALE = 0.25
+```
 
-사용 모델:
+## 명중 시각 효과
+
+고무줄 geom `rb_1` ~ `rb_4`가 타겟 geom `target_base_rect`, `target_stem`, `target_round_head`와 contact되면 명중으로 판정합니다.
+
+명중 시:
+
+- `hit_effect` mocap body가 충돌 위치로 이동합니다.
+- `hit_particle_0` ~ `hit_particle_8` sphere가 짧게 퍼집니다.
+- Aim Camera 화면에 `HIT! #n`이 표시됩니다.
+- Controls 창에 누적 hit count가 표시됩니다.
+
+## YOLO 타겟 검출
+
+실제 환경 데이터로 학습한 YOLO ONNX 모델을 MuJoCo Aim Camera 프레임에 적용합니다.
 
 ```python
 YOLO_MODEL_PATH = "yolo_model/target_yolo11s_640_best.onnx"
@@ -259,21 +200,18 @@ YOLO_INFER_EVERY_N_FRAMES = 3
 
 추론 흐름:
 
-1. MuJoCo Aim Camera를 `640 x 480`으로 렌더링합니다.
-2. 실제 웹캠처럼 보이도록 색감, 밝기, bloom, blur 후처리를 적용합니다.
-3. YOLO 입력 크기 `640 x 640`에 맞게 letterbox 처리합니다.
+1. Aim Camera를 `640 x 480`으로 렌더링합니다.
+2. 웹캠처럼 보이도록 색감, 밝기, bloom, blur 후처리를 적용합니다.
+3. YOLO 입력 크기 `640 x 640`으로 letterbox 처리합니다.
 4. OpenCV DNN으로 ONNX 모델을 실행합니다.
 5. bbox를 원래 `640 x 480` 좌표로 되돌립니다.
-6. 가장 confidence가 높은 타겟 bbox를 사용합니다.
-7. bbox 중심과 화면 중심의 차이를 계산해 Controls 창의 YOLO 상태에 표시합니다.
+6. 가장 confidence가 높은 bbox를 사용합니다.
 
-모델 출력 shape는 현재 `(1, 5, 8400)` 구조로 확인되어 있습니다.  
-클래스는 `target` 하나입니다.
+YOLO 모델 출력 shape는 `(1, 5, 8400)`으로 확인되어 있고 클래스는 `target` 하나입니다.
 
 ## 조준 보정 모델
 
-5cm 전체 테이블 데이터셋으로 첫 조준 보정 회귀 모델을 학습했습니다.  
-모델은 YOLO bbox feature와 현재 yaw/pitch를 입력으로 받아 현재 포신 방향에서 목표를 맞추기 위해 얼마나 움직여야 하는지 예측합니다.
+5cm 전체 테이블 데이터셋으로 ridge regression 기반 조준 보정 모델을 학습했습니다.
 
 모델 파일:
 
@@ -281,14 +219,7 @@ YOLO_INFER_EVERY_N_FRAMES = 3
 models/aim_delta_ridge_5cm.npz
 ```
 
-학습/분석 스크립트:
-
-```powershell
-.\.venv\Scripts\python.exe analyze_aim_dataset.py
-.\.venv\Scripts\python.exe train_aim_delta_model.py
-```
-
-사용 feature:
+입력 feature:
 
 - `norm_err_x`, `norm_err_y`
 - `bbox_w_norm`, `bbox_h_norm`, `bbox_area_norm`
@@ -296,25 +227,38 @@ models/aim_delta_ridge_5cm.npz
 - `current_yaw_rad`, `current_pitch_rad`
 - 위 feature들의 2차항과 상호작용항
 
+예측 label:
+
+- `delta_yaw_rad`
+- `delta_pitch_rad`
+
 검증 성능:
 
 ```text
-yaw RMSE:   약 0.834 deg
-pitch RMSE: 약 1.090 deg
-both axes within 1 deg: 약 64.28%
+yaw RMSE: 0.834 deg
+pitch RMSE: 1.090 deg
+both axes within 1 deg: 64.28%
 ```
 
-`view_world.py`에서는 OpenCV `Controls` 창에 포커스를 둔 상태에서 `O`를 누르면 Aim Camera를 다시 렌더링하면서 최대 6번까지 `YOLO 검출 -> 보정 예측 -> 조향 안정화`를 반복합니다.  
-따라서 처음 조준이 많이 틀어져 있어도 `O`를 여러 번 직접 누르지 않고 한 번의 입력으로 목표 각도에 더 가까이 이동합니다.  
-반복 보정이 끝나고 최종 타겟 검출이 남아 있으면 같은 `do_fire()` 경로로 고무줄을 1회 자동 발사합니다.  
-`Space` 수동 발사 기능도 그대로 유지됩니다.
+`O` 키 동작:
+
+```text
+Aim Camera 렌더링
+-> YOLO 검출
+-> 보정량 예측
+-> yaw/pitch 적용
+-> 조향 안정화
+-> 최대 6회 반복
+-> 최종 타겟 검출이 남아 있으면 do_fire()로 1회 발사
+```
+
+타겟이 검출되지 않으면 안전하게 발사하지 않습니다.
 
 ## 조준 데이터 수집
 
 `collect_aim_dataset.py`는 자동 조준 학습용 CSV를 만드는 스크립트입니다.
 
-핵심 아이디어는 절대 서보모터 값이 아니라, 현재 카메라가 바라보는 방향에서 타겟을 맞추기 위해 얼마나 움직여야 하는지인 보정량을 저장하는 것입니다.  
-카메라가 포신에 붙어 있어서 포신이 움직이면 카메라 화면도 같이 바뀌기 때문에, `hit_yaw`, `hit_pitch` 자체보다 `delta_yaw`, `delta_pitch`가 더 중요한 label입니다.
+핵심 label은 절대 서보모터 각도가 아니라 현재 포신 방향 기준 보정량입니다.
 
 ```text
 delta_yaw   = hit_yaw   - current_yaw
@@ -327,138 +271,59 @@ delta_pitch = hit_pitch - current_pitch
 .\.venv\Scripts\python.exe collect_aim_dataset.py --output datasets\aim_training_data.csv
 ```
 
-CSV 주요 컬럼:
+5cm 전체 테이블 수집 결과:
 
 ```text
-target_x,target_y,target_z
-bbox_x1,bbox_y1,bbox_x2,bbox_y2
-bbox_cx,bbox_cy,bbox_w,bbox_h,bbox_area,bbox_conf
-norm_err_x,norm_err_y,bbox_w_norm,bbox_h_norm,bbox_area_norm
-current_yaw_deg,current_pitch_deg
-hit_yaw_deg,hit_pitch_deg
-delta_yaw_deg,delta_pitch_deg
-hit_time_sec,hit_success
-```
-
-수집 과정:
-
-1. 타겟을 테이블 위 grid 위치로 이동합니다.
-2. 해당 위치를 맞출 수 있는 `hit_yaw`, `hit_pitch`를 MuJoCo 발사 시뮬레이션으로 찾습니다.
-3. 명중 각도 주변에 여러 current yaw/pitch 상태를 만듭니다.
-4. 각 상태에서 Aim Camera를 렌더링합니다.
-5. YOLO로 bbox를 검출합니다.
-6. bbox feature와 `delta_yaw`, `delta_pitch` label을 CSV에 기록합니다.
-
-기본 grid는 빠른 실험용으로 일부 영역만 사용합니다.
-
-```text
-x: -1.8m ~ 3.0m
-y: -0.6m ~ 0.6m
-step: 0.3m
-```
-
-이 설정은 전체 테이블이 아니라 안전하고 빠른 coarse grid입니다.  
-전체 테이블을 쓰려면 아래 범위를 사용해야 합니다.
-
-```text
-x: -3.0m ~ 4.2m
-y: -0.9m ~ 0.9m
-```
-
-예시:
-
-```powershell
-.\.venv\Scripts\python.exe collect_aim_dataset.py `
-  --output datasets\aim_training_data.csv `
-  --x-min -3.0 --x-max 4.2 `
-  --y-min -0.9 --y-max 0.9 `
-  --position-step 0.1
-```
-
-## 데이터 수집 시간 예상
-
-현재 PC CPU는 확인 결과 다음과 같습니다.
-
-```text
-AMD Ryzen 5 3500
-6 cores / 6 logical processors
-Max clock 약 3.59GHz
-```
-
-이 PC에서 벤치마크한 결과, 데이터 수집은 타겟 위치 1개당 약 `6.4초` 정도 걸렸습니다.
-
-비교 대상인 `12th Gen Intel Core i5-12400F`는 6코어 12스레드 CPU이며, PassMark 기준으로 Ryzen 5 3500보다 대략 1.4~1.5배 빠른 편입니다.  
-따라서 같은 코드 기준으로는 위치 1개당 약 `4.2~4.6초` 정도를 예상할 수 있습니다.
-
-| 그리드 간격 | 위치 수 | Ryzen 5 3500 예상 | i5-12400F 예상 |
-| --- | ---: | ---: | ---: |
-| 기본 grid | 85개 | 약 9분 | 약 6~7분 |
-| 30cm 전체 테이블 | 약 175개 | 약 19분 | 약 12~14분 |
-| 10cm 전체 테이블 | 약 1387개 | 약 2시간 28분 | 약 1시간 36분~1시간 46분 |
-| 5cm 전체 테이블 | 약 5365개 | 약 9시간 32분 | 약 6시간 13분~6시간 49분 |
-| 2cm 전체 테이블 | 약 32851개 | 약 58시간 | 약 38~42시간 |
-
-토큰은 데이터 수집 중 계속 소모되는 것이 아닙니다.  
-시간이 오래 걸리는 부분은 사용자의 컴퓨터에서 돌아가는 MuJoCo 시뮬레이션, 렌더링, YOLO 추론 계산입니다.
-
-## 5cm 전체 테이블 데이터 수집 결과
-
-2026년 5월 7일에 전체 테이블 범위를 `5cm` 간격으로 4분할 병렬 수집했습니다.
-
-```text
-x: -3.0m ~ 4.2m
-y: -0.9m ~ 0.9m
-step: 0.05m
-```
-
-| part | x 범위 | 결과 row |
-| --- | --- | ---: |
-| part1 | `-3.00 ~ -1.25` | 6940 |
-| part2 | `-1.20 ~ 0.55` | 19761 |
-| part3 | `0.60 ~ 2.35` | 16914 |
-| part4 | `2.40 ~ 4.20` | 9592 |
-
-최종 병합 파일:
-
-```text
-datasets/aim_training_data_5cm.csv
-```
-
-검증 결과:
-
-```text
+파일: datasets/aim_training_data_5cm.csv
 data rows: 53207
 file size: 약 18.64MB
-header count: 1
+수집 시간: 약 3시간 49분
 ```
 
-실제 수집은 대략 오전 6시 3분부터 오전 9시 52분까지 진행되어 약 3시간 49분 정도 걸렸습니다.  
-데이터 파일은 크기가 크고 생성물 성격이므로 `datasets/` 폴더를 `.gitignore`에 넣어 GitHub에는 올리지 않습니다.
+`datasets/` 폴더는 `.gitignore`에 포함되어 있어 GitHub에는 올라가지 않습니다.
+
+## 데이터 분석과 학습
+
+```powershell
+.\.venv\Scripts\python.exe analyze_aim_dataset.py
+.\.venv\Scripts\python.exe train_aim_delta_model.py
+```
+
+생성 결과:
+
+- `reports/aim_dataset_quality_5cm.md`
+- `reports/aim_delta_model_5cm.md`
+- `models/aim_delta_ridge_5cm.npz`
+
+## GitHub 클론 실행
+
+노트북에서 클론해도 실행, YOLO 검출, `O` 자동 조준/발사는 가능합니다.
+
+```powershell
+git clone https://github.com/kang-jun-mo12/Mujoco.git
+cd Mujoco
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe view_world.py
+```
+
+단, `datasets/aim_training_data_5cm.csv`는 GitHub에 없으므로 데이터 분석/재학습을 하려면 따로 복사해야 합니다. 이미 학습된 모델 파일은 GitHub에 포함되어 있어 실행에는 데이터셋 CSV가 필요 없습니다.
 
 ## 현재 검증된 내용
 
 - 회의실 통합 XML 로드 가능
-- OpenCV `Controls` 창에서 키 입력 처리
-- MuJoCo viewer는 보기 전용 유지
-- yaw/pitch 2개 actuator 구조 유지
+- MuJoCo viewer 보기 전용 유지
+- OpenCV `Controls` 입력 처리
+- yaw/pitch 2축 actuator 구조 유지
 - trigger 관련 joint/motor 없음
 - Space 반복 발사 가능
-- R 재장전 기능 없음
-- 발사대 yaw lock 문제 해결
-- Aim Camera가 포신 방향과 정렬됨
-- Aim Camera 사양은 `640 x 480`, `30 FPS`
-- 타겟 이동 `F/H/T/G` 동작
-- viewer lookat 이동 `I/J/K/L` 동작
-- YOLO ONNX 모델로 MuJoCo 타겟 검출 가능
-- 데이터 수집 스크립트 smoke test 성공
-- 데이터 수집 benchmark로 시간 추정 완료
-- 데이터 수집 진행 상황이 CSV와 로그에 바로 남도록 flush 처리 추가
-- 5cm 간격 전체 테이블 병렬 데이터 수집 완료
-- 5cm 데이터 기반 ridge 회귀 조준 보정 모델 학습 완료
-- `O` 키로 YOLO bbox 기반 반복 자동 조준 보정 후 1회 발사 가능
-- 타겟 명중 시 MuJoCo 파티클 효과와 Aim Camera `HIT!` 표시 가능
+- O 자동 조준 후 1회 발사 가능
+- Aim Camera와 포신 방향 정렬
+- YOLO ONNX 타겟 검출 가능
+- 5cm 전체 테이블 데이터 수집 완료
+- ridge regression 조준 보정 모델 학습 완료
+- 명중 시 파티클 효과와 `HIT!` 표시 가능
 
-## 앞으로의 핵심 방향
+## 앞으로의 방향
 
-다음 단계는 현재 ridge 회귀 모델의 실제 명중률을 `view_world.py`에서 테스트하고, 부족하면 데이터 정제나 더 강한 모델로 개선하는 것입니다.  
-모델 보정이 안정적으로 맞기 시작하면 YOLO 검출, 자동 보정, 발사를 하나의 자동 루프로 연결할 수 있습니다.
+다음 단계는 여러 타겟 위치에서 `O` 자동 조준/발사의 실제 명중률을 기록하고, 실패 사례를 분석하는 것입니다. 필요하면 데이터 정제, 더 강한 회귀 모델, 자동 평가 루프를 추가해 명중률을 개선합니다.
