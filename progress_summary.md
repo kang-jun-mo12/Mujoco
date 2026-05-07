@@ -354,6 +354,40 @@ Max clock 약 3.59GHz
 토큰은 데이터 수집 중 계속 소모되는 것이 아닙니다.  
 시간이 오래 걸리는 부분은 사용자의 컴퓨터에서 돌아가는 MuJoCo 시뮬레이션, 렌더링, YOLO 추론 계산입니다.
 
+## 5cm 전체 테이블 데이터 수집 결과
+
+2026년 5월 7일에 전체 테이블 범위를 `5cm` 간격으로 4분할 병렬 수집했습니다.
+
+```text
+x: -3.0m ~ 4.2m
+y: -0.9m ~ 0.9m
+step: 0.05m
+```
+
+| part | x 범위 | 결과 row |
+| --- | --- | ---: |
+| part1 | `-3.00 ~ -1.25` | 6940 |
+| part2 | `-1.20 ~ 0.55` | 19761 |
+| part3 | `0.60 ~ 2.35` | 16914 |
+| part4 | `2.40 ~ 4.20` | 9592 |
+
+최종 병합 파일:
+
+```text
+datasets/aim_training_data_5cm.csv
+```
+
+검증 결과:
+
+```text
+data rows: 53207
+file size: 약 18.64MB
+header count: 1
+```
+
+실제 수집은 대략 오전 6시 3분부터 오전 9시 52분까지 진행되어 약 3시간 49분 정도 걸렸습니다.  
+데이터 파일은 크기가 크고 생성물 성격이므로 `datasets/` 폴더를 `.gitignore`에 넣어 GitHub에는 올리지 않습니다.
+
 ## 현재 검증된 내용
 
 - 회의실 통합 XML 로드 가능
@@ -371,8 +405,10 @@ Max clock 약 3.59GHz
 - YOLO ONNX 모델로 MuJoCo 타겟 검출 가능
 - 데이터 수집 스크립트 smoke test 성공
 - 데이터 수집 benchmark로 시간 추정 완료
+- 데이터 수집 진행 상황이 CSV와 로그에 바로 남도록 flush 처리 추가
+- 5cm 간격 전체 테이블 병렬 데이터 수집 완료
 
 ## 앞으로의 핵심 방향
 
-다음 단계는 `collect_aim_dataset.py`로 충분한 CSV 데이터를 만들고, bbox feature에서 `delta_yaw`, `delta_pitch`를 예측하는 회귀 모델을 학습하는 것입니다.  
+다음 단계는 수집된 `datasets/aim_training_data_5cm.csv`를 분석하고 정제한 뒤, bbox feature에서 `delta_yaw`, `delta_pitch`를 예측하는 회귀 모델을 학습하는 것입니다.  
 이 모델을 `view_world.py`에 연결하면 YOLO가 타겟을 검출한 뒤 자동으로 보정 각도를 적용하고, 타겟을 향해 발사하는 구조로 발전시킬 수 있습니다.

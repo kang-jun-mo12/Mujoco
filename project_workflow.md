@@ -68,36 +68,37 @@
 - 각 위치에서 Aim Camera를 렌더링하고 YOLO bbox를 검출합니다.
 - 절대 서보모터 값이 아니라 현재 포신 방향 기준 보정량인 `delta_yaw`, `delta_pitch`를 CSV label로 저장합니다.
 
+### 1.9 5cm 전체 테이블 데이터 수집 완료
+
+- 전체 테이블 범위 `x=-3.0~4.2`, `y=-0.9~0.9`를 `5cm` 간격으로 수집했습니다.
+- X 범위를 4개 part로 나누어 병렬 실행했습니다.
+- 최종 병합 파일은 `datasets/aim_training_data_5cm.csv`입니다.
+- 최종 데이터 row는 `53207`개입니다.
+- 수집 시간은 약 `3시간 49분`이 걸렸습니다.
+- `datasets/` 폴더는 생성 데이터이므로 GitHub에는 올리지 않도록 `.gitignore`에 포함되어 있습니다.
+
 ## 2. 현재 프로젝트 상태
 
 현재 프로젝트는 수동 조작, YOLO 타겟 검출, 자동 데이터 수집의 기반이 모두 연결된 상태입니다.
 
 사용자는 `view_world.py`를 실행해서 회의실 안의 고무줄 발사대를 직접 조작할 수 있습니다.  
 `P`를 누르면 포신에 달린 Aim Camera 화면이 뜨고, YOLO가 타겟을 검출합니다.  
-`collect_aim_dataset.py`를 실행하면 여러 타겟 위치와 여러 현재 조준 상태에 대해 자동 조준 학습용 CSV를 만들 수 있습니다.
+`collect_aim_dataset.py`를 실행하면 여러 타겟 위치와 여러 현재 조준 상태에 대해 자동 조준 학습용 CSV를 만들 수 있습니다.  
+현재는 5cm 간격 전체 테이블 데이터셋이 로컬 `datasets/aim_training_data_5cm.csv`에 생성되어 있습니다.
 
 ## 3. 현재 남은 핵심 문제
 
-### 3.1 충분한 데이터 수집
+### 3.1 데이터 품질 확인
 
-기본 grid는 빠른 테스트용이라 전체 테이블을 촘촘히 덮지 않습니다.
+5cm 전체 테이블 데이터는 생성되었지만, 바로 학습에 넣기 전에 품질 확인이 필요합니다.
 
-전체 테이블 범위:
+확인할 항목:
 
-```text
-x: -3.0m ~ 4.2m
-y: -0.9m ~ 0.9m
-```
-
-추천 시작점은 `10cm` 간격입니다.
-
-```powershell
-.\.venv\Scripts\python.exe collect_aim_dataset.py `
-  --output datasets\aim_training_data.csv `
-  --x-min -3.0 --x-max 4.2 `
-  --y-min -0.9 --y-max 0.9 `
-  --position-step 0.1
-```
+- bbox가 너무 작거나 confidence가 낮은 row
+- launcher와 너무 가까운 위치의 이상치
+- `delta_yaw`, `delta_pitch`가 과하게 큰 row
+- 같은 타겟 위치에서 검출이 불안정한 row
+- 명중 각도 탐색 중 MuJoCo instability warning이 잦았던 구간
 
 ### 3.2 발사대와 너무 가까운 영역 처리
 
@@ -154,16 +155,15 @@ CSV가 충분히 쌓이면 다음 feature를 입력으로 사용합니다.
 
 ## 4. 다음 작업 추천 순서
 
-1. `collect_aim_dataset.py`에 launcher 주변 제외 옵션을 추가합니다.
-2. 30cm 간격 전체 테이블로 빠른 검증 데이터를 수집합니다.
-3. 10cm 간격 전체 테이블 데이터를 수집합니다.
-4. CSV를 분석해서 bbox 누락, 이상치, 명중 실패 위치를 확인합니다.
-5. `delta_yaw`, `delta_pitch` 회귀 모델을 학습합니다.
-6. 학습 모델을 저장합니다.
-7. `view_world.py`에 자동 조준 모드를 추가합니다.
-8. YOLO 검출 후 자동 보정과 발사를 테스트합니다.
-9. 실제 데이터와 MuJoCo 데이터 간 차이를 비교합니다.
-10. 필요하면 MuJoCo 월드 색감, 타겟 크기, 카메라 후처리를 더 조정합니다.
+1. `datasets/aim_training_data_5cm.csv`의 bbox/confidence/보정각 분포를 분석합니다.
+2. launcher 주변 제외 기준과 이상치 제거 기준을 정합니다.
+3. 정제된 학습 CSV를 새로 저장합니다.
+4. `delta_yaw`, `delta_pitch` 회귀 모델을 학습합니다.
+5. 학습 모델을 저장합니다.
+6. `view_world.py`에 자동 조준 모드를 추가합니다.
+7. YOLO 검출 후 자동 보정과 발사를 테스트합니다.
+8. 실제 데이터와 MuJoCo 데이터 간 차이를 비교합니다.
+9. 필요하면 MuJoCo 월드 색감, 타겟 크기, 카메라 후처리를 더 조정합니다.
 
 ## 5. 장기 목표
 
